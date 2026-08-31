@@ -1,0 +1,24 @@
+<svg width="160" height="160" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>Mark do Maestro</title>
+<desc>Monograma da letra Z em destaque, com o nome maestro em segundo plano de forma sutil</desc>
+
+<defs>
+<clipPath id="badge-clip">
+<rect width="80" height="80" rx="16"/>
+</clipPath>
+</defs>
+
+<rect width="80" height="80" rx="16" fill="#131a26"/>
+
+<g clip-path="url(#badge-clip)">
+<text x="40" y="52" font-family="'IBM Plex Mono', monospace" font-size="34"
+      font-weight="600" fill="#26314a" text-anchor="middle">maestro</text>
+</g>
+
+<path d="M40 6 L70 23 L70 57 L40 74 L10 57 L10 23 Z"
+      fill="#131a26" stroke="#0114c1e9" stroke-width="2"/>
+
+<path d="M20 24 H60 L20 56 H60"
+      fill="none" stroke="#0114c1e9" stroke-width="7"
+      stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

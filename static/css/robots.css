@@ -88,3 +88,42 @@
   color: var(--text-muted);
   margin-top: 0.2rem;
 }
+
+.status-ativo {
+  background: rgba(77, 174, 80, 0.15);
+  color: #4dae50;
+}
+.status-inativo {
+  background: rgba(107, 111, 118, 0.15);
+  color: var(--text-muted);
+}
+.status-manutencao {
+  background: rgba(232, 152, 58, 0.15);
+  color: var(--accent);
+}
+.robo-details summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.robo-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.robo-details summary::before {
+  content: "▸ ";
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.robo-details[open] summary::before {
+  content: "▾ ";
+}
+
+.robo-description {
+  margin: 0.5rem 0 0;
+  padding-left: 1rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  border-left: 2px solid var(--border);
+}

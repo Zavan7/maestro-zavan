@@ -21,30 +21,28 @@
     </tr>
   </thead>
   <tbody>
+    {% for robo in robos %}
     <tr>
-      <td>coleta-notas-fiscais</td>
-      <td><span class="status-badge status-active">ativo</span></td>
       <td>
-        <span class="status-badge status-success">sucesso</span>
-        <span class="last-run-time">há 12 min</span>
+        <details class="robo-details">
+          <summary>{{ robo.nome }}</summary>
+          <p class="robo-description">{{ robo.descricao|default:"Sem descrição." }}</p>
+        </details>
+      </td>
+      <td>
+        <span class="status-badge status-{{ robo.status }}">
+          {{ robo.get_status_display }}
+        </span>
+      </td>
+      <td>
+        <span class="status-badge status-running">sem execuções ainda</span>
       </td>
     </tr>
+    {% empty %}
     <tr>
-      <td>envio-relatorio-diario</td>
-      <td><span class="status-badge status-active">ativo</span></td>
-      <td>
-        <span class="status-badge status-running">rodando</span>
-        <span class="last-run-time">iniciado há 2 min</span>
-      </td>
+      <td colspan="3">Nenhum robô cadastrado ainda.</td>
     </tr>
-    <tr>
-      <td>backup-planilhas</td>
-      <td><span class="status-badge status-maintenance">manutenção</span></td>
-      <td>
-        <span class="status-badge status-failure">falha</span>
-        <span class="last-run-time">ontem às 03:14</span>
-      </td>
-    </tr>
+    {% endfor %}
   </tbody>
 </table>
 {% endblock %}

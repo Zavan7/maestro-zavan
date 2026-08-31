@@ -1,0 +1,17 @@
+<svg width="480" height="160" viewBox="0 0 480 160" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>Logo Maestro by Zavan</title>
+<desc>Marca do projeto Maestro: monograma da letra Z acompanhado do nome maestro e a assinatura zavan · rpa</desc>
+
+<g id="mark">
+<path d="M40 8 L68 24 L68 56 L40 72 L12 56 L12 24 Z"
+      fill="none" stroke="#0114c1e9" stroke-width="2"/>
+<path d="M22 24 H58 L22 56 H58"
+      fill="none" stroke="#0114c1e9" stroke-width="6"
+      stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+
+<g font-family="'IBM Plex Mono', monospace">
+<text x="92" y="46" font-size="30" font-weight="600" fill="#e2e8f0">maestro</text>
+<text x="92" y="68" font-size="13" fill="#6b7280" letter-spacing="1">zavan &#183; rpa</text>
+</g>
+</svg>
