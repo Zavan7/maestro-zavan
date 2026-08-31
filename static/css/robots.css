@@ -1,0 +1,90 @@
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.page-header h1 {
+  font-size: 1.1rem;
+  font-weight: 500;
+  margin: 0;
+}
+
+.robots-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.robots-table th {
+  text-align: left;
+  padding: 0.75rem 1rem;
+  background: var(--card-bg);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+}
+
+.robots-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.robots-table tr:last-child td {
+  border-bottom: none;
+}
+
+.robots-table tr:hover td {
+  background: var(--card-bg);
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.status-active {
+  background: rgba(77, 174, 80, 0.15);
+  color: #4dae50;
+}
+
+.status-inactive {
+  background: rgba(107, 111, 118, 0.15);
+  color: var(--text-muted);
+}
+.status-maintenance {
+  background: rgba(232, 152, 58, 0.15);
+  color: var(--accent);
+}
+
+.status-success {
+  background: rgba(77, 174, 80, 0.15);
+  color: #4dae50;
+}
+
+.status-failure {
+  background: rgba(229, 72, 77, 0.15);
+  color: var(--error);
+}
+
+.status-running {
+  background: rgba(107, 111, 118, 0.15);
+  color: var(--text-muted);
+}
+
+.last-run-time {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}

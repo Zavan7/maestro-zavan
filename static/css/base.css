@@ -1,0 +1,141 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+
+:root {
+  --bg: #17212f;
+  --card-bg: #131a26;
+  --border: #24334a;
+  --text: #d4d4d4;
+  --text-muted: #6b6f76;
+  --accent: #0114c1e9;
+  --accent-dim: #7a5527;
+  --error: #e5484d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "IBM Plex Mono", monospace;
+  background-color: var(--bg);
+  background-image: radial-gradient(
+    circle at center,
+    #1f2c40 0%,
+    var(--bg) 45%,
+    #101722 100%
+  );
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* Componentes reutilizáveis: titlebar estilo terminal */
+.terminal-titlebar {
+  background: #10161f;
+  padding: 0.6rem 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.dot-red {
+  background: #e5484d;
+}
+.dot-yellow {
+  background: #e8983a;
+}
+.dot-green {
+  background: #4dae50;
+}
+
+.terminal-path {
+  margin-left: 0.6rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* Botões e inputs padrão */
+.btn {
+  padding: 0.7rem;
+  background: var(--accent);
+  color: #0b0d10;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.85rem;
+  letter-spacing: 0.03em;
+}
+
+.btn:hover {
+  opacity: 0.9;
+}
+
+.field-label {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  margin-bottom: 0.4rem;
+}
+
+.field-label::before {
+  content: "> ";
+  color: var(--accent);
+}
+
+input {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text) !important;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.9rem;
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text);
+  -webkit-box-shadow: 0 0 0px 1000px var(--bg) inset;
+  transition: background-color 5000s ease-in-out 0s;
+}
+.app-header {
+  justify-content: space-between;
+}
+
+.logout-form {
+  margin: 0;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  color: var(--accent);
+}
+
+.app-content {
+  padding: 2rem;
+  max-width: 960px;
+  margin: 0 auto;
+}

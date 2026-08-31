@@ -1,0 +1,41 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Login — Maestro</title>
+    <link rel="stylesheet" href="{% static 'css/base.css' %}" />
+    <link rel="stylesheet" href="{% static 'css/login.css' %}" />
+  </head>
+  <body class="login-page">
+    <div class="terminal-card">
+      <div class="terminal-titlebar">
+        <span class="dot dot-red"></span>
+        <span class="dot dot-yellow"></span>
+        <span class="dot dot-green"></span>
+        <span class="terminal-path">~/maestro/login</span>
+      </div>
+
+      <div class="terminal-body">
+        <div class="logo-line">
+          <span class="logo-prompt">$</span>
+          <span class="logo-text">maestro login</span>
+          <span class="logo-cursor"></span>
+        </div>
+
+        {% if form.errors %}
+        <p class="error-message">Usuário ou senha inválidos.</p>
+        {% endif %}
+
+        <form method="post">
+          {% csrf_token %}
+          <label class="field-label">usuário</label>
+          {{ form.username }}
+          <label class="field-label">senha</label>
+          {{ form.password }}
+          <button type="submit" class="btn">executar login</button>
+        </form>
+      </div>
+    </div>
+  </body>
+</html>

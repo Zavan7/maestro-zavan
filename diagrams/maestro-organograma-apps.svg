@@ -1,0 +1,56 @@
+<svg width="680" height="500" viewBox="0 0 680 500" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>Organograma dos apps do Maestro</title>
+<desc>Apps Django do projeto Maestro agrupados em três camadas: Domínio, Suporte e Interface</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5F5E5A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>
+</defs>
+<rect width="680" height="500" fill="#FFFFFF"/>
+
+<!-- Container 1: Domínio (teal) -->
+<rect x="40" y="40" width="600" height="120" rx="16" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="60" y="64" font-family="sans-serif" font-size="14" font-weight="500" fill="#085041">Domínio</text>
+
+<rect x="50" y="84" width="180" height="56" rx="8" fill="#FFFFFF" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="140" y="102" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="500" fill="#2C2C2A">Robôs</text>
+<text x="140" y="120" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#5F5E5A">Cadastro de automações</text>
+
+<rect x="250" y="84" width="180" height="56" rx="8" fill="#FFFFFF" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="340" y="102" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="500" fill="#2C2C2A">Execuções</text>
+<text x="340" y="120" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#5F5E5A">Rodadas via Celery</text>
+
+<rect x="450" y="84" width="180" height="56" rx="8" fill="#FFFFFF" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="540" y="102" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="500" fill="#2C2C2A">Agendamento</text>
+<text x="540" y="120" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#5F5E5A">Disparo recorrente</text>
+
+<line x1="340" y1="160" x2="340" y2="190" stroke="#5F5E5A" stroke-width="0.5" marker-end="url(#arrow)"/>
+
+<!-- Container 2: Suporte (coral) -->
+<rect x="40" y="190" width="600" height="120" rx="16" fill="#FAECE7" stroke="#993C1D" stroke-width="0.5"/>
+<text x="60" y="214" font-family="sans-serif" font-size="14" font-weight="500" fill="#712B13">Suporte</text>
+
+<rect x="50" y="234" width="180" height="56" rx="8" fill="#FFFFFF" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="140" y="252" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="500" fill="#2C2C2A">Contas</text>
+<text x="140" y="270" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#5F5E5A">Usuários e permissões</text>
+
+<rect x="250" y="234" width="180" height="56" rx="8" fill="#FFFFFF" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="340" y="252" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="500" fill="#2C2C2A">Auditoria</text>
+<text x="340" y="270" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#5F5E5A">Log de ações</text>
+
+<rect x="450" y="234" width="180" height="56" rx="8" fill="#FFFFFF" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="540" y="252" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="500" fill="#2C2C2A">Notificações</text>
+<text x="540" y="270" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#5F5E5A">Alertas de falha</text>
+
+<line x1="340" y1="310" x2="340" y2="340" stroke="#5F5E5A" stroke-width="0.5" marker-end="url(#arrow)"/>
+
+<!-- Container 3: Interface (purple) -->
+<rect x="40" y="340" width="600" height="120" rx="16" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="60" y="364" font-family="sans-serif" font-size="14" font-weight="500" fill="#3C3489">Interface</text>
+
+<rect x="150" y="384" width="180" height="56" rx="8" fill="#FFFFFF" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="240" y="402" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="500" fill="#2C2C2A">API</text>
+<text x="240" y="420" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#5F5E5A">Endpoints REST</text>
+
+<rect x="350" y="384" width="180" height="56" rx="8" fill="#FFFFFF" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="440" y="402" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="500" fill="#2C2C2A">Dashboard</text>
+<text x="440" y="420" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#5F5E5A">Métricas e status</text>
+</svg>

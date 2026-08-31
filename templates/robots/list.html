@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Robôs — Maestro{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/robots.css' %}" />
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>~/robots</h1>
+</div>
+
+<table class="robots-table">
+  <thead>
+    <tr>
+      <th>Nome</th>
+      <th>Status</th>
+      <th>Última execução</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>coleta-notas-fiscais</td>
+      <td><span class="status-badge status-active">ativo</span></td>
+      <td>
+        <span class="status-badge status-success">sucesso</span>
+        <span class="last-run-time">há 12 min</span>
+      </td>
+    </tr>
+    <tr>
+      <td>envio-relatorio-diario</td>
+      <td><span class="status-badge status-active">ativo</span></td>
+      <td>
+        <span class="status-badge status-running">rodando</span>
+        <span class="last-run-time">iniciado há 2 min</span>
+      </td>
+    </tr>
+    <tr>
+      <td>backup-planilhas</td>
+      <td><span class="status-badge status-maintenance">manutenção</span></td>
+      <td>
+        <span class="status-badge status-failure">falha</span>
+        <span class="last-run-time">ontem às 03:14</span>
+      </td>
+    </tr>
+  </tbody>
+</table>
+{% endblock %}
