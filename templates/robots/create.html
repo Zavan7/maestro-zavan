@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Cadastrar Robô — Maestro{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/robots.css' %}" />
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>~/robots/novo</h1>
+</div>
+
+<form method="post" class="form-card">
+  {% csrf_token %}
+
+  <label class="field-label">nome</label>
+  <input type="text" name="nome" required />
+
+  <label class="field-label">descrição</label>
+  <textarea name="descricao" rows="3"></textarea>
+
+  <label class="field-label">caminho do script</label>
+  <input type="text" name="caminho_script" required />
+
+  <label class="field-label">status</label>
+  <select name="status">
+    <option value="ativo">Ativo</option>
+    <option value="inativo">Inativo</option>
+    <option value="manutencao">Manutenção</option>
+  </select>
+
+  <button type="submit" class="btn">cadastrar</button>
+</form>
+{% endblock %}

@@ -139,3 +139,151 @@ input:-webkit-autofill:focus {
   max-width: 960px;
   margin: 0 auto;
 }
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--card-bg);
+  border-right: 1px solid var(--border);
+  padding: 1.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.sidebar-logo {
+  display: flex;
+  justify-content: center;
+}
+
+.sidebar-mark {
+  width: 40px;
+  height: 40px;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.nav-link {
+  padding: 0.5rem 0.6rem;
+  border-radius: 4px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.nav-link:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.nav-link.active {
+  background: var(--bg);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.nav-link.disabled {
+  color: #454b57;
+  cursor: default;
+}
+
+.nav-link.disabled em {
+  font-style: normal;
+  font-size: 0.65rem;
+  margin-left: 0.3rem;
+}
+
+.nav-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0.5rem 0;
+}
+
+.app-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.app-header {
+  justify-content: flex-end;
+}
+
+.robots-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.robots-table th {
+  text-align: left;
+  padding: 0.75rem 1rem;
+  background: var(--card-bg);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+}
+
+.robots-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.robots-table tr:last-child td {
+  border-bottom: none;
+}
+
+.robots-table tr:hover td {
+  background: var(--card-bg);
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.status-ativo,
+.status-sucesso {
+  background: rgba(77, 174, 80, 0.15);
+  color: #4dae50;
+}
+.status-inativo,
+.status-rodando {
+  background: rgba(107, 111, 118, 0.15);
+  color: var(--text-muted);
+}
+.status-manutencao,
+.status-pendente {
+  background: rgba(232, 152, 58, 0.15);
+  color: var(--accent);
+}
+.status-falha {
+  background: rgba(229, 72, 77, 0.15);
+  color: var(--error);
+}
+
+.last-run-time {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}

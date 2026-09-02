@@ -118,3 +118,31 @@
   font-size: 0.8rem;
   border-left: 2px solid var(--border);
 }
+
+.form-card {
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.form-card textarea,
+.form-card select {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  margin-bottom: 1rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.9rem;
+}
+
+.form-card input {
+  margin-bottom: 1rem;
+}
+
+.form-card .btn {
+  align-self: flex-start;
+}

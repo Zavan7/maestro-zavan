@@ -8,18 +8,51 @@
     {% block extra_css %}{% endblock %}
   </head>
   <body>
-    <header class="terminal-titlebar app-header">
-      <span class="dot dot-red"></span>
-      <span class="dot dot-yellow"></span>
-      <span class="dot dot-green"></span>
-      <span class="terminal-path">~/maestro</span>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-logo">
+          <img src="{% static 'img/logo-mark.svg' %}" alt="Maestro" class="sidebar-mark" />
+        </div>
 
-      <form method="post" action="{% url 'logout' %}" class="logout-form">
-        {% csrf_token %}
-        <button type="submit" class="link-btn">sair</button>
-      </form>
-    </header>
+        <nav class="sidebar-nav">
+          <a href="{% url 'home' %}"
+             class="nav-link {% if request.resolver_match.url_name == 'home' %}active{% endif %}">
+            início
+          </a>
+          <a href="{% url 'robot_list' %}"
+             class="nav-link {% if request.resolver_match.url_name == 'robot_list' %}active{% endif %}">
+            robôs
+          </a>
+          <a href="{% url 'robot_create' %}"
+             class="nav-link {% if request.resolver_match.url_name == 'robot_create' %}active{% endif %}">
+            cadastrar robô
+          </a>
 
-    <main class="app-content">{% block content %}{% endblock %}</main>
+          <span class="nav-divider"></span>
+
+          <span class="nav-link disabled">execuções <em>em breve</em></span>
+          <span class="nav-link disabled">agendamentos <em>em breve</em></span>
+          <span class="nav-link disabled">configurações <em>em breve</em></span>
+        </nav>
+      </aside>
+
+      <div class="app-main">
+        <header class="terminal-titlebar app-header">
+          <span class="dot dot-red"></span>
+          <span class="dot dot-yellow"></span>
+          <span class="dot dot-green"></span>
+          <span class="terminal-path">~/maestro</span>
+
+          <form method="post" action="{% url 'logout' %}" class="logout-form">
+            {% csrf_token %}
+            <button type="submit" class="link-btn">sair</button>
+          </form>
+        </header>
+
+        <main class="app-content">
+          {% block content %}{% endblock %}
+        </main>
+      </div>
+    </div>
   </body>
 </html>
