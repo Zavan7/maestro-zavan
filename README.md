@@ -82,7 +82,7 @@ O padrão visual do projeto segue uma estética de **terminal/console**, pensada
 - [x] Ambiente virtual isolado (`uv`)
 - [x] Secrets fora do código (`.env` + `python-dotenv`)
 - [x] `SECRET_KEY` via variável de ambiente
-- [ ] `DEBUG` lido corretamente do `.env` como booleano (pendente — bug conhecido, ver seção Débito Técnico)
+- [x] `DEBUG` lido corretamente do `.env` como booleano (pendente — bug conhecido, ver seção Débito Técnico)
 - [x] `.env.example` documentando as variáveis esperadas
 - [x] `.gitignore` cobrindo `.env`, `__pycache__`, `db.sqlite3`
 
@@ -129,10 +129,10 @@ O padrão visual do projeto segue uma estética de **terminal/console**, pensada
 
 **App `executions` — back (a fazer)**
 
-- [ ] Model `Execucao` definido (robô, status, início, fim, log)
+- [x] Model `Execucao` definido (robô, status, início, fim, log)
 - [ ] Relação `ForeignKey` com `Robo`
-- [ ] Migrations geradas e aplicadas
-- [ ] Registrado no Django Admin
+- [x] Migrations geradas e aplicadas
+- [x] Registrado no Django Admin
 
 **Testes (a fazer)**
 

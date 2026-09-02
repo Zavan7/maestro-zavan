@@ -53,42 +53,7 @@
   font-weight: 500;
 }
 
-.status-active {
-  background: rgba(77, 174, 80, 0.15);
-  color: #4dae50;
-}
-
-.status-inactive {
-  background: rgba(107, 111, 118, 0.15);
-  color: var(--text-muted);
-}
-.status-maintenance {
-  background: rgba(232, 152, 58, 0.15);
-  color: var(--accent);
-}
-
-.status-success {
-  background: rgba(77, 174, 80, 0.15);
-  color: #4dae50;
-}
-
-.status-failure {
-  background: rgba(229, 72, 77, 0.15);
-  color: var(--error);
-}
-
-.status-running {
-  background: rgba(107, 111, 118, 0.15);
-  color: var(--text-muted);
-}
-
-.last-run-time {
-  display: block;
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  margin-top: 0.2rem;
-}
-
+/* Status do Robo */
 .status-ativo {
   background: rgba(77, 174, 80, 0.15);
   color: #4dae50;
@@ -101,6 +66,32 @@
   background: rgba(232, 152, 58, 0.15);
   color: var(--accent);
 }
+
+/* Status da Execucao */
+.status-sucesso {
+  background: rgba(77, 174, 80, 0.15);
+  color: #4dae50;
+}
+.status-falha {
+  background: rgba(229, 72, 77, 0.15);
+  color: var(--error);
+}
+.status-rodando {
+  background: rgba(107, 111, 118, 0.15);
+  color: var(--text-muted);
+}
+.status-pendente {
+  background: rgba(232, 152, 58, 0.15);
+  color: var(--accent);
+}
+
+.last-run-time {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
 .robo-details summary {
   cursor: pointer;
   list-style: none;

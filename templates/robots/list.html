@@ -35,7 +35,18 @@
         </span>
       </td>
       <td>
-        <span class="status-badge status-running">sem execuções ainda</span>
+        {% with ultima=robo.execucoes_recentes|first %}
+          {% if ultima %}
+            <span class="status-badge status-{{ ultima.status }}">
+              {{ ultima.get_status_display }}
+            </span>
+            {% if ultima.iniciado_em %}
+              <span class="last-run-time">{{ ultima.iniciado_em|timesince }} atrás</span>
+            {% endif %}
+          {% else %}
+            <span class="status-badge status-pendente">sem execuções ainda</span>
+          {% endif %}
+        {% endwith %}
       </td>
     </tr>
     {% empty %}

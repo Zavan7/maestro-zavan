@@ -20,9 +20,13 @@ body.login-page {
 
 .logo-line {
   display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
+  justify-content: center;
   margin-bottom: 2rem;
+}
+
+.logo-img {
+  height: 40px;
+  width: auto;
 }
 
 .logo-prompt {
