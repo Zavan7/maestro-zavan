@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Editar Robô — Maestro{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/robots.css' %}" />
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>~/robots/{{ robo.id }}/editar</h1>
+</div>
+
+<form method="post" class="form-card">
+  {% csrf_token %}
+
+  <label class="field-label">nome</label>
+  <input type="text" name="nome" value="{{ robo.nome }}" required />
+
+  <label class="field-label">descrição</label>
+  <textarea name="descricao" rows="3">{{ robo.descricao }}</textarea>
+
+  <label class="field-label">caminho do script</label>
+  <input type="text" name="caminho_script" value="{{ robo.caminho_script }}" required />
+
+  <label class="field-label">status</label>
+  <select name="status">
+    <option value="ativo" {% if robo.status == "ativo" %}selected{% endif %}>Ativo</option>
+    <option value="inativo" {% if robo.status == "inativo" %}selected{% endif %}>Inativo</option>
+    <option value="manutencao" {% if robo.status == "manutencao" %}selected{% endif %}>Manutenção</option>
+  </select>
+
+  <button type="submit" class="btn">salvar alterações</button>
+</form>
+{% endblock %}

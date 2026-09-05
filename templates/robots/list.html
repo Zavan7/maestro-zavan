@@ -18,6 +18,7 @@
       <th>Nome</th>
       <th>Status</th>
       <th>Última execução</th>
+      <th>Ações</th>
     </tr>
   </thead>
   <tbody>
@@ -48,10 +49,28 @@
           {% endif %}
         {% endwith %}
       </td>
+      <td>
+        <a href="{% url 'robot_edit' robo.id %}" class="link-btn">editar</a>
+        <a href="{% url 'robot_exclusion' robo.id %}" class="link-btn">excluir</a>
+
+        {% with ultima=robo.execucoes_recentes|first %}
+          {% if ultima and ultima.status == "rodando" %}
+            <form method="post" action="{% url 'robot_stop' robo.id %}" class="inline-form">
+              {% csrf_token %}
+              <button type="submit" class="link-btn link-btn-stop">parar</button>
+            </form>
+          {% else %}
+            <form method="post" action="{% url 'robot_start' robo.id %}" class="inline-form">
+              {% csrf_token %}
+              <button type="submit" class="link-btn link-btn-start">iniciar</button>
+            </form>
+          {% endif %}
+        {% endwith %}
+      </td>
     </tr>
     {% empty %}
     <tr>
-      <td colspan="3">Nenhum robô cadastrado ainda.</td>
+      <td colspan="4">Nenhum robô cadastrado ainda.</td>
     </tr>
     {% endfor %}
   </tbody>

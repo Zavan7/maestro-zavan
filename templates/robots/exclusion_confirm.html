@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Excluir Robô — Maestro{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/robots.css' %}" />
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>~/robots/{{ robo.id }}/excluir</h1>
+</div>
+
+<div class="confirm-card">
+  <p>Tem certeza que deseja excluir o robô <strong>{{ robo.nome }}</strong>?</p>
+  <p class="page-subtitle">Essa ação não pode ser desfeita.</p>
+
+  <form method="post">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-danger">confirmar exclusão</button>
+    <a href="{% url 'robot_list' %}" class="link-btn">cancelar</a>
+  </form>
+</div>
+{% endblock %}

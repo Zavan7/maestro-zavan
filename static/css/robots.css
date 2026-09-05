@@ -146,3 +146,27 @@
 .form-card .btn {
   align-self: flex-start;
 }
+.confirm-card {
+  max-width: 480px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+
+.btn-danger {
+  background: var(--error);
+  margin-right: 1rem;
+}
+.inline-form {
+  display: inline;
+  margin: 0;
+}
+
+.link-btn-start {
+  color: #4dae50;
+}
+
+.link-btn-stop {
+  color: var(--error);
+}

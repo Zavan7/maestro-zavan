@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Execução #{{ execucao.id }} — Maestro{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/executions.css' %}" />
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>~/execucoes/{{ execucao.id }}</h1>
+</div>
+
+<div class="execution-meta">
+  <div>
+    <span class="field-label">robô</span>
+    <p>{{ execucao.robo.nome }}</p>
+  </div>
+  <div>
+    <span class="field-label">status</span>
+    <p>
+      <span class="status-badge status-{{ execucao.status }}">
+        {{ execucao.get_status_display }}
+      </span>
+    </p>
+  </div>
+  <div>
+    <span class="field-label">disparado por</span>
+    <p>{{ execucao.disparado_por.username|default:"—" }}</p>
+  </div>
+  <div>
+    <span class="field-label">iniciado em</span>
+    <p>{{ execucao.iniciado_em|default:"—" }}</p>
+  </div>
+  <div>
+    <span class="field-label">finalizado em</span>
+    <p>{{ execucao.finalizado_em|default:"—" }}</p>
+  </div>
+</div>
+
+<h2 class="section-title">log</h2>
+<pre class="log-output">{{ execucao.log|default:"Nenhum log registrado ainda." }}</pre>
+{% endblock %}

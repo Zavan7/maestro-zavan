@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Execuções — Maestro{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>~/execucoes</h1>
+</div>
+
+<table class="robots-table">
+  <thead>
+    <tr>
+      <th>Robô</th>
+      <th>Status</th>
+      <th>Disparado por</th>
+      <th>Iniciado</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for execucao in execucoes %}
+    <tr>
+      <td>
+        <a href="{% url 'execution_detail' execucao.id %}" class="table-link">
+          {{ execucao.robo.nome }}
+        </a>
+      </td>
+      <td>
+        <span class="status-badge status-{{ execucao.status }}">
+          {{ execucao.get_status_display }}
+        </span>
+      </td>
+      <td>{{ execucao.disparado_por.username|default:"—" }}</td>
+      <td>
+        {% if execucao.iniciado_em %}
+          {{ execucao.iniciado_em|timesince }} atrás
+        {% else %}
+          —
+        {% endif %}
+      </td>
+    </tr>
+    {% empty %}
+    <tr>
+      <td colspan="4">Nenhuma execução registrada ainda.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
