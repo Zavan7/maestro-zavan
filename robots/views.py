@@ -6,6 +6,7 @@ from robots.models import Robo
 from executions.models import Execucao
 from django.utils import timezone
 
+from robots.forms import RoboForm
 
 @login_required
 def robot_list(request):
@@ -22,16 +23,16 @@ def robot_list(request):
 @login_required
 def robot_create(request):
     if request.method == "POST":
-        Robo.objects.create(
-            nome=request.POST.get("nome"),
-            descricao=request.POST.get("descricao", ""),
-            caminho_script=request.POST.get("caminho_script"),
-            status=request.POST.get("status", Robo.Status.ATIVO),
-            responsavel=request.user,
-        )
-        return redirect("robot_list")
+        form = RoboForm(request.POST)
+        if form.is_valid():
+            robo = form.save(commit=False)
+            robo.responsavel = request.user
+            robo.save()
+            return redirect("robot_list")
+    else:
+        form = RoboForm()
 
-    return render(request, "robots/create.html")
+    return render(request, "robots/create.html", {"form": form})
 
 
 @login_required
@@ -39,14 +40,14 @@ def robot_edit(request, pk):
     robo = get_object_or_404(Robo, pk=pk)
 
     if request.method == "POST":
-        robo.nome = request.POST.get("nome")
-        robo.descricao = request.POST.get("descricao", "")
-        robo.caminho_script = request.POST.get("caminho_script")
-        robo.status = request.POST.get("status", robo.status)
-        robo.save()
-        return redirect("robot_list")
+        form = RoboForm(request.POST, instance=robo)
+        if form.is_valid():
+            form.save()
+            return redirect("robot_list")
+    else:
+        form = RoboForm(instance=robo)
 
-    return render(request, "robots/edit.html", {"robo": robo})
+    return render(request, "robots/edit.html", {"form": form, "robo": robo})
 
 
 @login_required
