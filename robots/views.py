@@ -1,12 +1,15 @@
-from django.contrib.auth.decorators import login_required
-from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required, permission_required
+from django.db import transaction
 from django.db.models import Prefetch, ProtectedError
-from robots.models import Robo
-from executions.models import Execucao
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
+from executions.models import Execucao
 from robots.forms import RoboForm
+from robots.models import Robo
+from robots.tasks import executar_robo
+
 
 @login_required
 def robot_list(request):
@@ -20,7 +23,7 @@ def robot_list(request):
     return render(request, "robots/list.html", {"robos": robos})
 
 
-@login_required
+@permission_required("robots.add_robo", raise_exception=True)
 def robot_create(request):
     if request.method == "POST":
         form = RoboForm(request.POST)
@@ -28,6 +31,7 @@ def robot_create(request):
             robo = form.save(commit=False)
             robo.responsavel = request.user
             robo.save()
+            messages.success(request, f"Robô '{robo.nome}' cadastrado.")
             return redirect("robot_list")
     else:
         form = RoboForm()
@@ -35,7 +39,7 @@ def robot_create(request):
     return render(request, "robots/create.html", {"form": form})
 
 
-@login_required
+@permission_required("robots.change_robo", raise_exception=True)
 def robot_edit(request, pk):
     robo = get_object_or_404(Robo, pk=pk)
 
@@ -43,6 +47,7 @@ def robot_edit(request, pk):
         form = RoboForm(request.POST, instance=robo)
         if form.is_valid():
             form.save()
+            messages.success(request, f"Robô '{robo.nome}' salvo.")
             return redirect("robot_list")
     else:
         form = RoboForm(instance=robo)
@@ -50,7 +55,7 @@ def robot_edit(request, pk):
     return render(request, "robots/edit.html", {"form": form, "robo": robo})
 
 
-@login_required
+@permission_required("robots.delete_robo", raise_exception=True)
 def robot_exclusion(request, pk):
     robo = get_object_or_404(Robo, pk=pk)
 
@@ -60,10 +65,11 @@ def robot_exclusion(request, pk):
         except ProtectedError:
             messages.error(
                 request,
-                f"Não é possível excluir '{robo.nome}': existem execuções associadas a ele."
+                f"Não é possível excluir '{robo.nome}': existem execuções associadas a ele.",
             )
             return redirect("robot_list")
 
+        messages.success(request, f"Robô '{robo.nome}' excluído.")
         return redirect("robot_list")
 
     return render(request, "robots/exclusion_confirm.html", {"robo": robo})
@@ -74,18 +80,31 @@ def robot_start(request, pk):
     robo = get_object_or_404(Robo, pk=pk)
 
     if request.method == "POST":
-        ja_rodando = robo.execucoes.filter(status=Execucao.Status.RODANDO).exists()
-
-        if not ja_rodando:
-            # TODO (Nível 2/3): aqui entra o disparo real via WebSocket/Celery
-            # pro agente que roda o script na máquina. Por enquanto, só
-            # simulamos o estado no banco.
-            Execucao.objects.create(
-                robo=robo,
-                status=Execucao.Status.RODANDO,
-                iniciado_em=timezone.now(),
-                disparado_por=request.user,
+        if robo.status != Robo.Status.ATIVO:
+            messages.error(
+                request,
+                f"Não é possível iniciar '{robo.nome}': robô está {robo.get_status_display().lower()}.",
             )
+            return redirect("robot_list")
+
+        em_andamento = robo.execucoes.filter(
+            status__in=[Execucao.Status.PENDENTE, Execucao.Status.RODANDO]
+        ).exists()
+
+        if em_andamento:
+            messages.error(
+                request,
+                f"'{robo.nome}' já tem uma execução em andamento.",
+            )
+            return redirect("robot_list")
+
+        execucao = Execucao.objects.create(
+            robo=robo,
+            status=Execucao.Status.PENDENTE,
+            disparado_por=request.user,
+        )
+        transaction.on_commit(lambda: executar_robo.delay(execucao.id))
+        messages.success(request, f"Execução de '{robo.nome}' iniciada.")
 
     return redirect("robot_list")
 
@@ -98,9 +117,9 @@ def robot_stop(request, pk):
         execucao = robo.execucoes.filter(status=Execucao.Status.RODANDO).last()
 
         if execucao:
-            # TODO (Nível 2/3): aqui entra o comando real de parada via
-            # WebSocket pro agente. Por enquanto, marcamos como sucesso
-            # manualmente.
+            # TODO: com o agente Go, aqui o Django manda o comando de parada
+            # via WebSocket e o agente encerra o processo de verdade.
+            # Por enquanto, só marca o registro como finalizado.
             execucao.status = Execucao.Status.SUCESSO
             execucao.finalizado_em = timezone.now()
             execucao.save()

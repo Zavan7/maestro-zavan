@@ -1,7 +1,10 @@
+from django.contrib.auth.models import Permission
 from django.contrib.auth import get_user_model
 from django.db.models import ProtectedError
 from django.test import TestCase, Client
+
 from robots.models import Robo
+
 from executions.models import Execucao
 
 User = get_user_model()
@@ -67,7 +70,12 @@ class RoboModelTest(TestCase):
 class RobotViewsTest(TestCase):
     def setUp(self):
         self.client = Client()
-        self.usuario = User.objects.create_user(username="analista", password="senha123")
+        self.usuario = User.objects.create_user(
+            username="analista", password="senha123"
+        )
+        self.usuario.user_permissions.add(
+            *Permission.objects.filter(content_type__app_label="robots")
+        )
         self.robo = Robo.objects.create(
             nome="robo-teste",
             caminho_script="/scripts/teste.py",
@@ -106,3 +114,14 @@ class RobotViewsTest(TestCase):
         self.client.login(username="analista", password="senha123")
         self.client.post(f"/robots/{self.robo.pk}/excluir/")
         self.assertFalse(Robo.objects.filter(pk=self.robo.pk).exists())
+
+    def test_robot_start_recusa_robo_em_manutencao(self):
+        self.robo.status = Robo.Status.MANUTENCAO
+        self.robo.save()
+
+        self.client.login(username="analista", password="senha123")
+        self.client.post(f"/robots/{self.robo.pk}/iniciar/")
+
+        self.assertFalse(
+            self.robo.execucoes.filter(status=Execucao.Status.RODANDO).exists()
+        )

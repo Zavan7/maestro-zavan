@@ -56,7 +56,7 @@
           <span class="dot dot-red"></span>
           <span class="dot dot-yellow"></span>
           <span class="dot dot-green"></span>
-          <span class="terminal-path">~/maestro</span>
+          <span class="terminal-path">{% block path %}~/maestro{% endblock %}</span>
 
           <form method="post" action="{% url 'logout' %}" class="logout-form">
             {% csrf_token %}
@@ -64,7 +64,17 @@
           </form>
         </header>
 
-        <main class="app-content">{% block content %}{% endblock %}</main>
+        <main class="app-content">
+          {% if messages %}
+          <ul class="flash-list">
+            {% for message in messages %}
+            <li class="flash flash-{{ message.tags }}">{{ message }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+
+          {% block content %}{% endblock %}
+        </main>
       </div>
     </div>
   </body>

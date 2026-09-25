@@ -1,36 +1,185 @@
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
+.home-header {
+  margin-bottom: 1.5rem;
+}
+
+.home-header h1 {
+  font-size: 1.4rem;
+  font-weight: 500;
+  margin: 0;
+}
+
+/* Distribuição da frota */
+.fleet {
   margin-bottom: 2rem;
 }
 
-.stat-card {
+.fleet-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+}
+
+.fleet-segment {
+  background: currentColor;
+}
+
+.fleet-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.fleet-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.fleet-legend strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* Grid principal */
+.home-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.side-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.panel {
   background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 1.25rem;
+  overflow: hidden;
+}
+
+.panel-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  margin: 0;
+  padding: 1rem 1.25rem 0;
+}
+
+.panel-empty {
+  margin: 0;
+  padding: 0.75rem 1.25rem 1.25rem;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+/* Console de execuções */
+.console-feed {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem 0;
+  max-height: 460px;
+  overflow-y: auto;
+}
+
+.console-line {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr) auto 4.5rem;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.55rem 1.25rem;
+  font-size: 0.85rem;
+}
+
+.console-line+.console-line {
+  border-top: 1px solid rgba(36, 51, 74, 0.5);
+}
+
+.console-line time,
+.console-meta {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.console-meta {
+  text-align: right;
+}
+
+.console-line .table-link {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.console-empty {
+  padding: 1.5rem 1.25rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* Atividade */
+.activity {
+  display: grid;
+  grid-template-columns: repeat(14, 1fr);
+  gap: 4px;
+  height: 120px;
+  padding: 1rem 1.25rem 0;
+}
+
+.activity-day {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  justify-content: flex-end;
+  height: 100%;
+  background: rgba(36, 51, 74, 0.35);
+  border-radius: 2px;
+  overflow: hidden;
 }
 
-.stat-value {
-  font-size: 1.8rem;
-  font-weight: 600;
-  color: var(--accent);
+.activity-bar.sucesso {
+  background: #4dae50;
 }
 
-.stat-label {
-  font-size: 0.75rem;
+.activity-bar.falha {
+  background: var(--error);
+}
+
+.activity-axis {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.4rem 1.25rem 1rem;
+  font-size: 0.7rem;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
-.section-title {
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--text-muted);
-  margin-bottom: 1rem;
+@media (max-width: 900px) {
+  .home-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .console-line {
+    grid-template-columns: 5.5rem minmax(0, 1fr) auto;
+  }
+
+  .console-meta {
+    display: none;
+  }
 }

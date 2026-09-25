@@ -7,6 +7,7 @@
   --text: #d4d4d4;
   --text-muted: #6b6f76;
   --accent: #0114c1e9;
+  --accent-text: #7b93ff;
   --accent-dim: #7a5527;
   --error: #e5484d;
 }
@@ -19,12 +20,10 @@ body {
   margin: 0;
   font-family: "IBM Plex Mono", monospace;
   background-color: var(--bg);
-  background-image: radial-gradient(
-    circle at center,
-    #1f2c40 0%,
-    var(--bg) 45%,
-    #101722 100%
-  );
+  background-image: radial-gradient(circle at center,
+      #1f2c40 0%,
+      var(--bg) 45%,
+      #101722 100%);
   color: var(--text);
   min-height: 100vh;
 }
@@ -44,12 +43,15 @@ body {
   height: 10px;
   border-radius: 50%;
 }
+
 .dot-red {
   background: #e5484d;
 }
+
 .dot-yellow {
   background: #e8983a;
 }
+
 .dot-green {
   background: #4dae50;
 }
@@ -72,6 +74,7 @@ body {
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.85rem;
   letter-spacing: 0.03em;
+  color: #ffffff;
 }
 
 .btn:hover {
@@ -113,6 +116,7 @@ input:-webkit-autofill:focus {
   -webkit-box-shadow: 0 0 0px 1000px var(--bg) inset;
   transition: background-color 5000s ease-in-out 0s;
 }
+
 .app-header {
   justify-content: space-between;
 }
@@ -135,9 +139,10 @@ input:-webkit-autofill:focus {
 }
 
 .app-content {
-  padding: 2rem;
-  max-width: 960px;
+  width: 100%;
+  max-width: 1400px;
   margin: 0 auto;
+  padding: 2rem 2.5rem;
 }
 
 .app-shell {
@@ -266,16 +271,19 @@ input:-webkit-autofill:focus {
   background: rgba(77, 174, 80, 0.15);
   color: #4dae50;
 }
+
 .status-inativo,
 .status-rodando {
   background: rgba(107, 111, 118, 0.15);
   color: var(--text-muted);
 }
+
 .status-manutencao,
 .status-pendente {
   background: rgba(232, 152, 58, 0.15);
   color: var(--accent);
 }
+
 .status-falha {
   background: rgba(229, 72, 77, 0.15);
   color: var(--error);
@@ -296,4 +304,50 @@ input:-webkit-autofill:focus {
 .table-link:hover {
   color: var(--accent);
   text-decoration: underline;
+}
+
+/* Texto em destaque sobre fundo escuro */
+.nav-link.active,
+.link-btn:hover,
+.table-link:hover,
+.field-label::before,
+.status-manutencao,
+.status-pendente {
+  color: var(--accent-text);
+}
+
+/* Mensagens de feedback */
+.flash-list {
+  list-style: none;
+  margin: 0 0 1.5rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.flash {
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--card-bg);
+  font-size: 0.85rem;
+}
+
+.flash-success {
+  border-color: rgba(77, 174, 80, 0.4);
+  color: #4dae50;
+}
+
+.flash-success::before {
+  content: "✓ ";
+}
+
+.flash-error {
+  border-color: rgba(229, 72, 77, 0.4);
+  color: var(--error);
+}
+
+.flash-error::before {
+  content: "✗ ";
 }

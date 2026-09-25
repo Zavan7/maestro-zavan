@@ -68,7 +68,7 @@
               {% csrf_token %}
               <button type="submit" class="link-btn link-btn-stop">parar</button>
             </form>
-          {% else %}
+          {% elif robo.status == "ativo" %}
             <form method="post" action="{% url 'robot_start' robo.id %}" class="inline-form">
               {% csrf_token %}
               <button type="submit" class="link-btn link-btn-start">iniciar</button>

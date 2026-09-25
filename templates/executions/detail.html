@@ -5,6 +5,9 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/executions.css' %}" />
+{% if execucao.status == "pendente" or execucao.status == "rodando" %}
+<meta http-equiv="refresh" content="5" />
+{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -40,5 +43,11 @@
 </div>
 
 <h2 class="section-title">log</h2>
-<pre class="log-output">{{ execucao.log|default:"Nenhum log registrado ainda." }}</pre>
+<ol class="log-output">
+  {% for linha in execucao.log.splitlines %}
+  <li class="{% if 'ERROR' in linha or 'Traceback' in linha %}log-erro{% endif %}">{{ linha }}</li>
+  {% empty %}
+  <li>Nenhum log registrado ainda.</li>
+  {% endfor %}
+</ol>
 {% endblock %}

@@ -14,12 +14,24 @@
   background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 1rem;
-  font-family: "IBM Plex Mono", monospace;
+  margin: 0;
+  padding: 1rem 1rem 1rem 3.5rem;
+  max-height: 480px;
+  overflow-y: auto;
   font-size: 0.8rem;
-  color: var(--text);
+}
+
+.log-output li {
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 400px;
-  overflow-y: auto;
+  padding: 0.1rem 0;
+}
+
+.log-output li::marker {
+  color: var(--text-muted);
+}
+
+.log-output .log-erro {
+  color: var(--error);
+  background: rgba(229, 72, 77, 0.08);
 }

@@ -3,65 +3,95 @@
 
 {% block title %}Início — Maestro{% endblock %}
 
+{% block path %}~/maestro/home{% endblock %}
+
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/home.css' %}" />
 {% endblock %}
 
 {% block content %}
-<div class="page-header">
-  <div>
-    <h1>~/home</h1>
-    <p class="page-subtitle">Olá, {{ user.username }}</p>
-  </div>
-</div>
+<header class="home-header">
+  <h1>Olá, {{ user.first_name|default:user.username }}</h1>
+  <p class="page-subtitle">{{ total_robos }} robô{{ total_robos|pluralize }} cadastrado{{ total_robos|pluralize }}</p>
+</header>
 
-<div class="stats-grid">
-  <div class="stat-card">
-    <span class="stat-value">{{ total_robos }}</span>
-    <span class="stat-label">robôs cadastrados</span>
+<section class="fleet" aria-label="Robôs por status">
+  <div class="fleet-bar">
+    {% for item in distribuicao %}
+      {% if item.total %}
+        <span class="fleet-segment status-{{ item.status }}"
+              style="width: {{ item.percentual|stringformat:'.1f' }}%"
+              title="{{ item.rotulo }}: {{ item.total }}"></span>
+      {% endif %}
+    {% endfor %}
   </div>
-  <div class="stat-card">
-    <span class="stat-value">{{ robos_ativos }}</span>
-    <span class="stat-label">ativos</span>
-  </div>
-  <div class="stat-card">
-    <span class="stat-value">{{ robos_manutencao }}</span>
-    <span class="stat-label">em manutenção</span>
-  </div>
-</div>
+  <ul class="fleet-legend">
+    {% for item in distribuicao %}
+      <li>
+        <span class="legend-dot status-{{ item.status }}"></span>
+        {{ item.rotulo }}
+        <strong>{{ item.total }}</strong>
+      </li>
+    {% endfor %}
+  </ul>
+</section>
 
-<h2 class="section-title">últimas execuções</h2>
+<div class="home-grid">
+  <section class="panel">
+    <div class="terminal-titlebar">
+      <span class="dot dot-red"></span>
+      <span class="dot dot-yellow"></span>
+      <span class="dot dot-green"></span>
+      <span class="terminal-path">tail -f execucoes.log</span>
+    </div>
 
-<table class="robots-table">
-  <thead>
-    <tr>
-      <th>Robô</th>
-      <th>Status</th>
-      <th>Quando</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for execucao in execucoes_recentes %}
-    <tr>
-      <td>{{ execucao.robo.nome }}</td>
-      <td>
+    <ol class="console-feed">
+      {% for execucao in execucoes_recentes %}
+      <li class="console-line">
+        <time>{{ execucao.iniciado_em|date:"d/m H:i"|default:"aguardando" }}</time>
+        <a href="{% url 'execution_detail' execucao.id %}" class="table-link">
+          {{ execucao.robo.nome }}
+        </a>
         <span class="status-badge status-{{ execucao.status }}">
           {{ execucao.get_status_display }}
         </span>
-      </td>
-      <td>
-        {% if execucao.iniciado_em %}
-          {{ execucao.iniciado_em|timesince }} atrás
-        {% else %}
-          —
-        {% endif %}
-      </td>
-    </tr>
-    {% empty %}
-    <tr>
-      <td colspan="3">Nenhuma execução registrada ainda.</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+        <span class="console-meta">{{ execucao.duracao_formatada|default:"—" }}</span>
+      </li>
+      {% empty %}
+      <li class="console-empty">
+        Nenhuma execução ainda. Inicie um robô na tela de
+        <a href="{% url 'robot_list' %}" class="table-link">robôs</a>
+        e ela aparece aqui.
+      </li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  <aside class="side-column">
+    <section class="panel">
+      <h2 class="panel-title">Atividade dos últimos 14 dias</h2>
+      <div class="activity">
+        {% for dia in atividade %}
+        <div class="activity-day"
+             title="{{ dia.dia|date:'d/m' }}: {{ dia.sucesso }} com sucesso, {{ dia.falha }} com falha">
+          <span class="activity-bar falha" style="height: {{ dia.altura_falha|stringformat:'.1f' }}%"></span>
+          <span class="activity-bar sucesso" style="height: {{ dia.altura_sucesso|stringformat:'.1f' }}%"></span>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="activity-axis">
+        <span>{{ atividade.0.dia|date:"d/m" }}</span>
+        <span>hoje</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2 class="panel-title">Agentes</h2>
+      <p class="panel-empty">
+        Nenhum agente conectado. As máquinas que executam os robôs vão aparecer aqui,
+        com status online e o último sinal recebido.
+      </p>
+    </section>
+  </aside>
+</div>
 {% endblock %}

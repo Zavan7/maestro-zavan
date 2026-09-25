@@ -1,218 +1,391 @@
 # Maestro
 
-> Orquestrador de automações RPA construído em Django, do zero ao nível sênior — com segurança tratada como requisito desde a primeira linha de código, não como algo adicionado depois.
+Orquestrador de automações RPA construído em Django. Centraliza o cadastro, a execução e o histórico de robôs de automação, com controle de acesso por perfil e registro completo de cada execução.
 
-**Status atual:** 🟡 Em desenvolvimento — Nível 1 (Iniciante), fechando o front/back de robôs e execuções
+Primeiro produto da **ZV Labs**.
 
----
+> **Sobre o projeto:** o Maestro é desenvolvido como projeto de estudo, dentro de uma trilha de aprendizado em Python, RPA e desenvolvimento web. Apesar disso, é documentado, testado e versionado como um projeto real, e este README descreve o sistema e o seu andamento, não o conteúdo de estudo.
 
-## Sobre este projeto
-
-Este é um **projeto de estudos**, construído como parte de uma trilha pessoal de aprendizado (lógica de programação → Python intermediário/avançado → RPA → async → mensageria → Django/FastAPI → MongoDB). O Maestro é o projeto integrador dessa trilha.
-
-Apesar de ser um ambiente de estudos, ele é documentado e versionado com o mesmo rigor de um projeto profissional. Nada de "depois eu documento": cada decisão relevante, cada correção de bug e cada etapa concluída fica registrada aqui.
-
-## O que é o Maestro
-
-Um sistema web para cadastrar, executar, agendar e monitorar automações RPA (robôs). Pense nele como um painel de controle central: em vez de cada script RPA rodar solto na sua máquina, o Maestro dá visibilidade, controle de acesso, agendamento e histórico de execução pra esses robôs.
-
-## Diagramas de arquitetura
-
-![Organograma dos apps do Maestro](diagrams/maestro-organograma-apps.svg)
-
-Os apps se organizam em três camadas: **Domínio** (`robots`, `executions`, `scheduler`), **Suporte** (`accounts`, `audit`, `notifications`) e **Interface** (`api`, `dashboard`). A interface consome o domínio, e o domínio se apoia no suporte para segurança e rastreabilidade. Os apps sem borda tracejada já têm código real; os demais são placeholders de fases futuras.
-
-![Fluxo de execução no Maestro](diagrams/maestro-fluxo-execucao.svg)
-
-Hoje, iniciar/parar uma execução só simula o estado no banco (botões manuais em `robots/views.py`). O plano é substituir essa simulação por um **agente escrito em Go**, rodando na máquina onde o robô realmente executa: ele recebe o comando via WebSocket do Django, dispara o script RPA em Python, e reporta status/log de volta. Ver seção "Ideias em avaliação" abaixo.
+**Status:** em desenvolvimento. Execução de robôs funcionando localmente via Celery; próxima fase é a execução remota por um agente em Go.
 
 ---
 
-## Stack técnica
+## Sumário
 
-| Camada                    | Tecnologia                       | Status                                        |
-| ------------------------- | -------------------------------- | --------------------------------------------- |
-| Backend                   | Django 6.1                       | ✅ Em uso                                     |
-| Gerenciador de pacotes    | `uv`                             | ✅ Em uso                                     |
-| Banco de dados            | SQLite (dev)                     | ✅ Em uso — PostgreSQL planejado pra produção |
-| Frontend                  | Django Templates + HTML/CSS puro | ✅ Em uso                                     |
-| Execução assíncrona       | Celery + Redis                   | ⏳ Planejado (Nível 2)                        |
-| API                       | Django REST Framework            | ⏳ Planejado (Nível 2)                        |
-| Isolamento de execução    | Docker (containers efêmeros)     | ⏳ Planejado (Nível 3)                        |
-| Agente de execução remota | Go + WebSocket                   | 💡 Ideia em avaliação (ver abaixo)            |
-
-**Decisão registrada:** o frontend usa Django Templates puro (HTML/CSS, sem framework JS) por opção deliberada nesta fase de aprendizado. Uma migração futura para React + API (DRF) está cogitada para o Nível 2.
-
-## Ideias em avaliação
-
-### Agente em Go para execução remota
-
-Hoje, os botões "iniciar"/"parar" na tela de robôs só alteram o estado da `Execucao` no banco — não existe execução real de script ainda (marcado com `# TODO` no código). A ideia é que, quando o projeto chegar no Nível 2/3, esse disparo passe a ser real através de um **agente escrito em Go** rodando na máquina onde o robô é executado:
-
-- O Django continua centralizado, sem saber os detalhes de cada máquina
-- O agente Go mantém uma conexão WebSocket viva com o Django, escuta comandos (iniciar/parar) e reporta status/log de volta
-- O script RPA em si **continua em Python** — o agente só orquestra o processo, não reimplementa a automação
-- Go foi escolhido pra esse papel específico por compilar num binário único (sem exigir Python configurado na máquina do robô só pra rodar o "mensageiro") e por lidar bem com conexões concorrentes de forma leve (goroutines)
-
-Essa é uma frente de estudo paralela (aprender Go) que será aberta quando o Nível 2 começar — não faz sentido misturar agora, no meio dos fundamentos de Django.
-
-## Identidade visual
-
-Estética de **terminal/console**, pensada para remeter ao público técnico (devs, analistas de RPA):
-
-- Cards com titlebar de três bolinhas (estilo macOS/VSCode)
-- Fonte monoespaçada: `IBM Plex Mono`
-- Fundo azul petróleo (`#17212f`) com gradiente radial sutil — nunca preto puro
-- Cor de destaque única: azul royal (`#0114c1e9`)
-- Logo: monograma **Z** em destaque, com o nome "maestro" sutil ao fundo (efeito de profundidade)
+- [Funcionalidades](#funcionalidades)
+- [Arquitetura](#arquitetura)
+- [Stack](#stack)
+- [Estrutura do projeto](#estrutura-do-projeto)
+- [Como rodar localmente](#como-rodar-localmente)
+- [Rotas](#rotas)
+- [Perfis e permissões](#perfis-e-permissões)
+- [Execução de robôs](#execução-de-robôs)
+- [Modelo de dados](#modelo-de-dados)
+- [Testes](#testes)
+- [Segurança](#segurança)
+- [Andamento](#andamento)
+- [Débito técnico](#débito-técnico)
+- [Convenções](#convenções)
 
 ---
 
-## Estrutura de apps
+## Funcionalidades
 
-| App             | Camada    | Responsabilidade                                | Status                         |
-| --------------- | --------- | ----------------------------------------------- | ------------------------------ |
-| `accounts`      | Suporte   | Autenticação, usuários, home/dashboard          | ✅ Funcional                   |
-| `robots`        | Domínio   | Cadastro, edição, exclusão, iniciar/parar robôs | ✅ Funcional (front+back)      |
-| `executions`    | Domínio   | Histórico e detalhe de execuções, log           | ✅ Funcional (front+back)      |
-| `scheduler`     | Domínio   | Agendamento recorrente                          | ⏳ Planejado (Nível 2)         |
-| `audit`         | Suporte   | Auditoria/log de ações                          | ⏳ Planejado (Nível 3)         |
-| `notifications` | Suporte   | Alertas de falha                                | ⏳ Planejado (Nível 3)         |
-| `api`           | Interface | Endpoints REST                                  | ⏳ Planejado (Nível 2)         |
-| `dashboard`     | Interface | Métricas consolidadas                           | 🟡 A home atual cobre o básico |
+**Disponível hoje**
 
----
+- Página pública da ZV Labs (portfólio) com acesso ao Maestro
+- Login e logout com o sistema de autenticação do Django
+- Painel com a distribuição dos robôs por status, atividade dos últimos 14 dias e console com as execuções recentes
+- Cadastro, edição e exclusão de robôs, com validação via `ModelForm`
+- Execução real de robôs em segundo plano (Celery + Redis), com captura do log
+- Histórico global de execuções e tela de detalhe com o log numerado e linhas de erro destacadas
+- Atualização automática da tela de detalhe enquanto a execução está em andamento
+- Controle de acesso por grupos (Operador e Administrador RPA)
+- Mensagens de confirmação e de erro em todas as ações
 
-## Checklist de progresso
+**Planejado**
 
-### Nível 1 — Iniciante
-
-**Setup do projeto**
-
-- [x] Ambiente virtual isolado (`uv`)
-- [x] Secrets fora do código (`.env` + `python-dotenv`)
-- [x] `SECRET_KEY` via variável de ambiente
-- [ ] `DEBUG` lido corretamente do `.env` como booleano (débito técnico conhecido)
-- [ ] `.env.example` documentando as variáveis esperadas
-- [x] `.gitignore` cobrindo `.env`, `__pycache__`, `db.sqlite3`
-
-**Apps e estrutura**
-
-- [x] Apps `accounts`, `robots`, `executions` criados e registrados
-
-**Autenticação (`accounts`)**
-
-- [x] Login via `LoginView`, logout via POST protegido por CSRF
-- [x] `LOGIN_URL`, `LOGIN_REDIRECT_URL`, `LOGOUT_REDIRECT_URL` configurados
-- [x] Home/dashboard com contagem de robôs por status e últimas 5 execuções
-
-**Frontend base**
-
-- [x] `templates/` e `static/` configurados
-- [x] `base.css` com variáveis de tema e componentes compartilhados (sidebar, tabela, badges, page-header)
-- [x] `base.html` com sidebar lateral (logo, navegação, item ativo destacado)
-- [x] Identidade visual (terminal/console) aplicada em login, home, robôs e execuções
-
-**App `robots`**
-
-- [x] Model `Robo` com testes (criação, status padrão, `get_status_display`, `__str__`, regra `PROTECT`)
-- [x] Listagem conectada ao banco com `Prefetch` (evita N+1), última execução e descrição expansível
-- [x] Cadastro de robô (`create.html` + view) — **sem `ModelForm` ainda**, lê `request.POST` direto
-- [x] Edição de robô (`edit.html` + `robot_edit`)
-- [x] Exclusão de robô com confirmação (`exclusion_confirm.html` + `robot_exclusion`), tratando `ProtectedError`
-- [x] Botões "iniciar"/"parar" execução (simulados — sem execução real ainda)
-- [ ] `forms.py` com validação via `ModelForm`
-
-**App `executions`**
-
-- [x] Model `Execucao` com testes (criação, status padrão, `__str__`, regras `PROTECT` e `SET_NULL`)
-- [x] Listagem global de execuções (`/execucoes/`), ordenada por mais recente
-- [x] Tela de detalhe de execução, exibindo o `log` completo em `<pre>`
-- [ ] Testes das views de `robots` e `executions` (hoje só os models têm testes)
-
-**Testes**
-
-- [x] Testes unitários dos models `Robo` e `Execucao`
-- [ ] Testes das views (acesso logado/deslogado, permissões, fluxo de edição/exclusão)
-- [ ] Teste manual do fluxo completo ponta a ponta
-
-### Nível 2 — Intermediário (não iniciado)
-
-- [ ] Groups e Permissions do Django configurados
-- [ ] Celery + Redis integrados
-- [ ] Execução isolada via `subprocess` (lista de argumentos, nunca `shell=True`)
-- [ ] `django-celery-beat` para agendamento recorrente
-- [ ] Rate limiting no login (`django-axes` ou similar)
-- [ ] Log de auditoria básico
-- [ ] API REST inicial (DRF) com autenticação por token/JWT
-- [ ] 💡 Frente de estudo: agente em Go para execução remota via WebSocket (ver "Ideias em avaliação")
-
-### Nível 3 — Avançado (não iniciado)
-
-- [ ] Execução em containers Docker efêmeros
-- [ ] Gestão de segredos real (cofre/criptografia em repouso)
-- [ ] Headers de segurança (`SECURE_HSTS_SECONDS`, `SESSION_COOKIE_SECURE`, etc.)
-- [ ] `django-csp` configurado
-- [ ] Scan de dependências (`pip-audit`/`safety`) no fluxo de trabalho
-- [ ] Observabilidade (logging estruturado, alertas)
-
-### Nível 4 — Sênior (não iniciado)
-
-- [ ] Threat modeling formal (STRIDE)
-- [ ] Revisão LGPD (retenção de logs, criptografia ponta a ponta)
-- [ ] CI/CD com testes, lint e scan de segurança
-- [ ] Infra como código (Terraform)
-- [ ] Plano de disaster recovery testado
+- Agente em Go para executar robôs em outras máquinas, conectado ao Maestro por WebSocket
+- Parada real de execuções em andamento
+- Agendamento recorrente
+- API REST
 
 ---
 
-## Débito técnico conhecido
+## Arquitetura
 
-| Item                                    | Descrição                                                                                                                    | Prioridade               |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| `DEBUG` no settings                     | `os.getenv('DEBUG')` retorna string, não booleano — `DEBUG` fica sempre `True` na prática, mesmo com `DEBUG=False` no `.env` | 🔴 Alta (segurança)      |
-| `EMAIL_BACKEND`                         | Setting `MAILERS` no `settings.py` não existe no Django; precisa virar `EMAIL_BACKEND` (string)                              | 🟡 Média                 |
-| Cadastro/edição de robô sem `ModelForm` | Views leem `request.POST` diretamente, sem validação de tipo/tamanho                                                         | 🟡 Média                 |
-| Iniciar/parar execução é simulado       | Não dispara processo real; aguardando Nível 2/3 (Celery) ou o agente Go                                                      | 🟢 Esperado nesta fase   |
-| Formatter do editor                     | VSCode formatando `.html` como HTML genérico, quebrando tags Django — mitigado com `.vscode/settings.json`                   | 🟢 Baixa (já contornado) |
+```mermaid
+flowchart LR
+    U[Usuário] -->|HTTP| D[Django<br/>Maestro]
+    D --> DB[(Banco de dados)]
+    D -->|enfileira task| R[(Redis)]
+    R --> W[Worker Celery]
+    W -->|subprocess| S[Script do robô<br/>ROBOS_SCRIPTS_DIR]
+    W -->|status e log| DB
+    D -. WebSocket, planejado .-> A[Agente Go]
+    A -. executa .-> S2[Robô na máquina remota]
+```
+
+Hoje, quando um robô é iniciado, o Django cria uma `Execucao` com status `pendente` e envia uma task para o Redis. O worker do Celery pega a task, executa o script do robô e grava o status final e o log no banco.
+
+Na próxima fase, a execução passa para um **agente escrito em Go**, instalado na máquina onde os robôs vivem. O agente abre uma conexão WebSocket com o Maestro, recebe os comandos de iniciar e parar, executa o robô no ambiente dele e devolve status e log. O Django continua sendo o ponto central de cadastro, permissões e histórico; o robô continua sendo Python.
 
 ---
 
-## Convenções do projeto
+## Stack
 
-- **Commits**: mensagens em português, descrevendo o quê e o porquê
-- **Templates**: uma tag Django por linha, nunca condensar `{% %}` em uma linha só (já causou bugs de parsing por formatação automática)
-- **CSS**: variáveis de tema centralizadas em `base.css`; componentes usados em mais de uma tela também moram lá (tabela, badges, page-header); cada tela específica tem seu próprio CSS enxuto
-- **Segurança**: nenhuma feature é considerada "pronta" sem revisão básica (permissões, CSRF, validação de entrada, tratamento de `ProtectedError`)
-- **Ações que mudam estado** (excluir, iniciar, parar, logout) sempre via POST, nunca GET
+| Camada | Tecnologia | Situação |
+|---|---|---|
+| Backend | Django 6.1 | Em uso |
+| Pacotes e ambiente | uv | Em uso |
+| Banco de dados | SQLite | Em uso (PostgreSQL previsto para produção) |
+| Frontend | Django Templates, HTML e CSS | Em uso |
+| Fila e execução assíncrona | Celery + Redis | Em uso |
+| Execução remota | Agente em Go + Django Channels (WebSocket) | Planejado |
+| Agendamento | django-celery-beat | Planejado |
+| API | Django REST Framework + JWT | Planejado |
+
+---
+
+## Estrutura do projeto
+
+```
+maestro-zavan/
+├── accounts/            # autenticação e painel
+├── robots/              # cadastro de robôs, disparo de execução, task Celery
+│   ├── forms.py
+│   ├── tasks.py
+│   └── views.py
+├── executions/          # histórico e detalhe de execuções
+├── maestro/             # configurações, URLs e app Celery
+│   ├── celery.py
+│   ├── settings.py
+│   └── urls.py
+├── scripts/             # pasta de robôs permitidos (ROBOS_SCRIPTS_DIR)
+│   └── robo_exemplo.py
+├── static/
+│   ├── css/
+│   └── img/
+├── templates/
+│   ├── base.html
+│   ├── portfolio/
+│   ├── accounts/
+│   ├── robots/
+│   └── executions/
+├── manage.py
+└── pyproject.toml
+```
 
 ---
 
 ## Como rodar localmente
 
+### Pré-requisitos
+
+- Python 3.14
+- [uv](https://docs.astral.sh/uv/)
+- Redis
+
+No Ubuntu:
+
 ```bash
-# Instalar dependências
+sudo apt install redis-server
+sudo systemctl enable --now redis-server
+redis-cli ping   # deve responder PONG
+```
+
+### Instalação
+
+```bash
+git clone <url-do-repositorio>
+cd maestro-zavan
 uv sync
+```
 
-# Rodar migrations
+Crie um arquivo `.env` na raiz:
+
+```
+SECRET_KEY=gere-uma-chave-nova
+DEBUG=True
+ALLOWED_HOSTS=localhost,127.0.0.1
+CELERY_BROKER_URL=redis://localhost:6379/0
+ROBOS_SCRIPTS_DIR=/caminho/absoluto/para/scripts
+```
+
+`ROBOS_SCRIPTS_DIR` é opcional. Sem ele, o Maestro usa a pasta `scripts/` do projeto.
+
+Prepare o banco:
+
+```bash
 uv run manage.py migrate
-
-# Criar superusuário (se ainda não tiver um)
 uv run manage.py createsuperuser
+```
 
-# Subir o servidor
+Crie os grupos de acesso (uma vez só):
+
+```bash
+uv run manage.py shell
+```
+
+```python
+from django.contrib.auth.models import Group, Permission
+
+Group.objects.get_or_create(name="Operador")
+admin_rpa, _ = Group.objects.get_or_create(name="Administrador RPA")
+admin_rpa.permissions.set(Permission.objects.filter(content_type__app_label="robots"))
+```
+
+### Execução
+
+São dois processos, cada um em um terminal:
+
+```bash
 uv run manage.py runserver
 ```
 
-Acesse `http://localhost:8000/login/` para entrar.
+```bash
+uv run celery -A maestro worker --loglevel=info
+```
+
+Acesse `http://localhost:8000/`.
 
 ---
 
-## Por que este projeto existe
+## Rotas
 
-O Maestro é um projeto longo e ambicioso, fruto de 2 anos de estudos em programação, especialmente em Python e RPA. Mas entendo a necessidade de ampliar os conhecimentos em várias áreas da programação, e esse projeto vem pra cobrir essa lacuna, onde posso dar vida ao RPA, ampliando e documentando todo o conhecimento adquirido até aqui.
+| Rota | Acesso | Descrição |
+|---|---|---|
+| `/` | Público | Página da ZV Labs |
+| `/login/` | Público | Login |
+| `/logout/` | Autenticado (POST) | Logout |
+| `/painel/` | Autenticado | Painel do Maestro |
+| `/robots/` | Autenticado | Lista de robôs |
+| `/robots/novo/` | `robots.add_robo` | Cadastro de robô |
+| `/robots/<id>/editar/` | `robots.change_robo` | Edição de robô |
+| `/robots/<id>/excluir/` | `robots.delete_robo` | Exclusão com confirmação |
+| `/robots/<id>/iniciar/` | Autenticado (POST) | Dispara uma execução |
+| `/robots/<id>/parar/` | Autenticado (POST) | Encerra a execução em andamento |
+| `/execucoes/` | Autenticado | Histórico de execuções |
+| `/execucoes/<id>/` | Autenticado | Detalhe e log de uma execução |
+| `/admin/` | Superusuário | Admin do Django |
 
 ---
 
-**Vitor Zavan**
-_zavan · rpa_
+## Perfis e permissões
+
+| Perfil | Pode |
+|---|---|
+| Operador | Ver robôs e execuções, iniciar e parar execuções |
+| Administrador RPA | Tudo do Operador, mais cadastrar, editar e excluir robôs |
+
+As permissões são verificadas nas views com `@permission_required(..., raise_exception=True)`: um usuário autenticado sem permissão recebe **403**, e não um redirecionamento para o login. Os botões correspondentes também são ocultados na interface, mas a proteção real é a da view.
+
+Superusuários ignoram as verificações de permissão. Para testar os perfis, use um usuário comum associado a um dos grupos.
+
+---
+
+## Execução de robôs
+
+### Ciclo de vida
+
+```
+pendente  →  rodando  →  sucesso
+                      ↘  falha
+```
+
+1. **pendente**: a execução foi criada e a task enviada para a fila
+2. **rodando**: o worker iniciou o script e registrou `iniciado_em`
+3. **sucesso** ou **falha**: o processo terminou; o Maestro grava `finalizado_em`, o status e o log
+
+Regras aplicadas no disparo:
+
+- Só robôs com status **ativo** podem ser iniciados
+- Um robô não pode ter duas execuções em andamento (`pendente` ou `rodando`) ao mesmo tempo
+- A task só é enviada depois que a execução é gravada no banco (`transaction.on_commit`)
+
+### Onde ficam os scripts
+
+O campo `caminho_script` de um robô é **relativo** à pasta definida em `ROBOS_SCRIPTS_DIR`. Exemplos válidos: `robo_exemplo.py`, `coleta_notas/main.py`.
+
+Caminhos absolutos ou que tentem sair dessa pasta (como `../outro/script.py`) são recusados e a execução termina como falha. Essa pasta funciona como a lista de scripts aprovados: o cadastro de um robô só aponta para um script dentro dela, nunca decide livremente o que executar.
+
+### Logs
+
+Tudo que o script escreve na saída padrão e na saída de erro é salvo no campo `log` da execução. Robôs que usam o módulo `logging` do Python têm os registros capturados automaticamente. Linhas contendo `ERROR` ou `Traceback` aparecem destacadas na tela de detalhe.
+
+### Limites
+
+| Limite | Valor |
+|---|---|
+| Tempo máximo de execução | 300 segundos |
+| Tamanho do log armazenado | últimos 10.000 caracteres |
+
+### Limitação atual
+
+Os scripts rodam com o Python do ambiente do Maestro. Robôs que dependem de bibliotecas não instaladas nesse ambiente vão falhar. Essa limitação deixa de existir com o agente em Go, que executa cada robô no ambiente da máquina onde ele está instalado.
+
+---
+
+## Modelo de dados
+
+### Robo
+
+| Campo | Tipo | Observação |
+|---|---|---|
+| `nome` | texto | |
+| `descricao` | texto | opcional |
+| `caminho_script` | texto | relativo a `ROBOS_SCRIPTS_DIR` |
+| `status` | escolha | `ativo`, `inativo`, `manutencao` |
+| `responsavel` | FK para usuário | `PROTECT` |
+| `criado_em` | data e hora | automático |
+
+### Execucao
+
+| Campo | Tipo | Observação |
+|---|---|---|
+| `robo` | FK para Robo | `PROTECT` |
+| `status` | escolha | `pendente`, `rodando`, `sucesso`, `falha` |
+| `disparado_por` | FK para usuário | `SET_NULL`, opcional |
+| `iniciado_em` | data e hora | preenchido pelo worker |
+| `finalizado_em` | data e hora | preenchido pelo worker |
+| `log` | texto | saída do script |
+
+### Decisões de integridade
+
+- **Robô com execuções não pode ser excluído** (`PROTECT`). O histórico é preservado; para aposentar um robô, altere o status para `inativo`.
+- **Usuário responsável por robôs não pode ser excluído** (`PROTECT`), para não perder a rastreabilidade de quem responde por cada robô.
+- **Excluir o usuário que disparou uma execução não apaga a execução** (`SET_NULL`). O registro continua, apenas sem a referência de quem disparou.
+
+---
+
+## Testes
+
+```bash
+uv run manage.py test
+```
+
+| Classe | Cobre |
+|---|---|
+| `RoboModelTest` | criação, status padrão, exibição do status, regra `PROTECT` no responsável |
+| `RobotViewsTest` | acesso sem login, listagem, edição, exclusão com e sem execuções associadas |
+| `ExecucaoModelTest` | criação, status padrão, regras `PROTECT` e `SET_NULL` |
+| `ExecutionViewsTest` | acesso sem login, listagem, detalhe com log, 404 para execução inexistente |
+
+Os testes não precisam do Redis nem do worker: o `TestCase` do Django não dispara callbacks de `transaction.on_commit`, então nenhuma task é enviada durante os testes.
+
+---
+
+## Segurança
+
+- Segredos fora do código, lidos do `.env` (que não é versionado)
+- CSRF em todos os formulários
+- Ações que alteram dados (logout, excluir, iniciar, parar) aceitas apenas via POST
+- Validadores de senha padrão do Django ativos
+- Permissões verificadas no backend, com resposta 403
+- Execução de scripts restrita a uma pasta aprovada, sem `shell=True` e com tempo limite
+- Log exibido com escape automático do Django (nunca com `|safe`)
+- Links externos com `rel="noopener noreferrer"`
+
+---
+
+## Andamento
+
+O acompanhamento diário é feito no [Trello do projeto](https://trello.com/b/B9qsNVe8/maestro-orquestrador-rpa).
+
+### Concluído
+
+- Estrutura do projeto, autenticação e identidade visual
+- Models `Robo` e `Execucao` com testes
+- CRUD de robôs com `ModelForm`
+- Histórico e detalhe de execuções
+- Testes das views
+- Grupos e permissões
+- Execução real via Celery + Redis
+- Painel com distribuição da frota, atividade e console de execuções
+- Página pública da ZV Labs
+
+### Próxima fase: agente em Go
+
+1. Model `Agente` (nome, token, último sinal) e associação de cada robô a um agente
+2. Django Channels com autenticação do agente por token
+3. Agente Go mínimo: conexão e heartbeat, com status online no painel
+4. Comando de iniciar: o agente executa o robô e devolve o log
+5. Comando de parar: o agente encerra o processo de verdade
+6. Agendamento recorrente enviando comandos para o agente
+
+Regras definidas para o agente desde o início: ele conecta no Maestro (nunca o contrário), cada agente tem o seu próprio token, e ele nunca recebe caminhos ou comandos crus, apenas o identificador do robô, resolvido dentro da pasta aprovada da própria máquina.
+
+### Depois
+
+- API REST (DRF + JWT, com limite de requisições)
+- Paginação e filtros no histórico de execuções
+- Página de detalhe por robô, com taxa de sucesso e duração média
+- Observabilidade e auditoria (logging estruturado, histórico de alterações, cabeçalhos de segurança)
+
+---
+
+## Débito técnico
+
+| Item | Descrição | Prioridade |
+|---|---|---|
+| `DEBUG` | `os.getenv("DEBUG")` retorna texto, e qualquer texto não vazio é verdadeiro; na prática `DEBUG` fica sempre ativo | Alta |
+| `EMAIL_BACKEND` | a configuração de e-mail usa uma chave (`MAILERS`) que o Django não reconhece | Média |
+| Parar execução | `robot_stop` marca a execução como finalizada, mas o processo continua no worker; será resolvido pelo agente | Média |
+| Estilos inline | as barras do painel usam `style` inline, o que vai conflitar com uma política de CSP rígida | Baixa |
+| Grupos via shell | os grupos são criados manualmente; o ideal é uma migração de dados | Baixa |
+
+---
+
+## Convenções
+
+- Commits em português, descrevendo o que mudou e o motivo
+- Templates com uma tag do Django por linha
+- `base.css` concentra variáveis de tema e componentes usados em mais de uma tela; cada tela tem o próprio CSS
+- Rotas referenciadas sempre pelo nome (`{% url 'home' %}`), nunca pelo caminho escrito à mão
+- Nenhuma funcionalidade é considerada pronta sem revisão de permissão, CSRF e validação de entrada
+
+---
+
+Desenvolvido por **Vitor Zavan**, sob a marca **ZV Labs**.
+
+[GitHub](https://github.com/Zavan7) | [LinkedIn](https://www.linkedin.com/in/vitor-zavan-831907297/)

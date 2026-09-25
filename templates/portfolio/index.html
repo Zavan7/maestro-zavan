@@ -1,0 +1,399 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>ZV Labs | Vitor Zavan, Python e RPA</title>
+    <meta
+      name="description"
+      content="ZV Labs: automação de processos com Python e RPA, por Vitor Zavan. Casa do Maestro, orquestrador de robôs."
+    />
+
+    <link rel="icon" type="image/svg+xml" href="{% static 'img/logo-mark.svg' %}" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+
+    <link rel="stylesheet" href="{% static 'css/portfolio.css' %}" />
+  </head>
+
+  <body>
+    <a href="#conteudo" class="skip-link">Pular para o conteúdo</a>
+
+    <header class="site-header">
+      <nav class="site-nav wrap" aria-label="Principal">
+        <a href="#inicio" class="brand">
+          <img src="{% static 'img/logo-mark.svg' %}" alt="" width="32" height="32" />
+          <span class="brand-name"><strong>ZV</strong> Labs</span>
+        </a>
+
+        <ul class="nav-links">
+          <li><a href="#sobre">Sobre</a></li>
+          <li><a href="#projetos">Projetos</a></li>
+          <li><a href="#stack">Stack</a></li>
+          <li><a href="#experiencia">Experiência</a></li>
+          <li><a href="#contato">Contato</a></li>
+        </ul>
+
+        {% if user.is_authenticated %}
+        <a href="{% url 'home' %}" class="btn btn-outline">Abrir o Maestro</a>
+        {% else %}
+        <a href="{% url 'login' %}" class="btn btn-outline">Entrar no Maestro</a>
+        {% endif %}
+      </nav>
+    </header>
+
+    <main id="conteudo">
+      <!-- Hero -->
+      <section id="inicio" class="hero wrap">
+        <div class="hero-text">
+          <p class="prompt">vitor@zvlabs:~$ whoami</p>
+
+          <h1>Automatizando processos com Python.</h1>
+
+          <p class="lead">
+            Desenvolvo automações robustas e fáceis de manter com Python, Playwright,
+            APIs e boas práticas de engenharia de software. A ZV Labs é onde esses
+            projetos ganham forma, começando pelo Maestro.
+          </p>
+
+          <div class="actions">
+            <a href="#projetos" class="btn btn-primary">Ver projetos</a>
+            <a href="#contato" class="btn btn-outline">Entrar em contato</a>
+          </div>
+        </div>
+
+        <figure class="terminal" aria-label="Exemplo do Maestro listando o status dos robôs">
+          <div class="terminal-titlebar">
+            <span class="dot dot-red"></span>
+            <span class="dot dot-yellow"></span>
+            <span class="dot dot-green"></span>
+            <span class="terminal-path">~/zvlabs/maestro</span>
+          </div>
+
+          <div class="terminal-body">
+            <p class="cmd"><span class="prompt-sign">$</span> maestro status</p>
+
+            <table class="status-table">
+              <thead>
+                <tr>
+                  <th scope="col">robô</th>
+                  <th scope="col">status</th>
+                  <th scope="col">última execução</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>coleta-notas-fiscais</td>
+                  <td><span class="badge badge-sucesso">sucesso</span></td>
+                  <td>há 12 min</td>
+                </tr>
+                <tr>
+                  <td>envio-relatorio-diario</td>
+                  <td><span class="badge badge-rodando">rodando</span></td>
+                  <td>há 2 min</td>
+                </tr>
+                <tr>
+                  <td>backup-planilhas</td>
+                  <td><span class="badge badge-falha">falha</span></td>
+                  <td>ontem, 03:14</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <p class="cmd">
+              <span class="prompt-sign">$</span>
+              <span class="cursor" aria-hidden="true"></span>
+            </p>
+          </div>
+        </figure>
+      </section>
+
+      <!-- Sobre -->
+      <section id="sobre" class="section">
+        <div class="wrap">
+          <header class="section-head">
+            <h2>~/sobre</h2>
+            <p class="section-lead">Transformando tarefas repetitivas em soluções que funcionam sozinhas.</p>
+          </header>
+
+          <div class="about">
+            <div class="about-text">
+              <p>
+                Sou desenvolvedor com foco em <strong>Python, RPA e automação de processos</strong>.
+                Busco criar soluções que reduzam atividades manuais, aumentem a produtividade
+                e tornem os processos mais confiáveis.
+              </p>
+              <p>
+                Tenho experiência com automação web, tratamento de dados, integração entre
+                sistemas e desenvolvimento de aplicações com boas práticas de código,
+                arquitetura de software e padrões de projeto.
+              </p>
+              <p>
+                Meu objetivo é desenvolver automações escaláveis, fáceis de manter e
+                preparadas para evoluir conforme as necessidades do negócio.
+              </p>
+            </div>
+
+            <dl class="focus-list">
+              <div>
+                <dt>Python</dt>
+                <dd>Automação, dados, APIs e aplicações.</dd>
+              </div>
+              <div>
+                <dt>RPA</dt>
+                <dd>Processos automatizados de ponta a ponta.</dd>
+              </div>
+              <div>
+                <dt>Web</dt>
+                <dd>Automação com Playwright e Selenium.</dd>
+              </div>
+              <div>
+                <dt>Dados</dt>
+                <dd>Excel, CSV, Pandas e SQL.</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      </section>
+
+      <!-- Projetos -->
+      <section id="projetos" class="section section-alt">
+        <div class="wrap">
+          <header class="section-head">
+            <h2>~/projetos</h2>
+            <p class="section-lead">Soluções desenvolvidas com foco em automação.</p>
+          </header>
+
+          <article class="featured">
+            <div class="featured-text">
+              <h3>
+                Maestro
+                <span class="badge badge-rodando">em desenvolvimento</span>
+              </h3>
+
+              <p>
+                Orquestrador de automações RPA: cadastro de robôs, execução assíncrona,
+                histórico com o log completo de cada execução e controle de acesso por perfil.
+                É o primeiro produto da ZV Labs.
+              </p>
+
+              <ul class="tags">
+                <li>Django</li>
+                <li>Celery</li>
+                <li>Redis</li>
+                <li>Go</li>
+              </ul>
+
+              <div class="actions">
+                {% if user.is_authenticated %}
+                <a href="{% url 'home' %}" class="btn btn-primary">Abrir o Maestro</a>
+                {% else %}
+                <a href="{% url 'login' %}" class="btn btn-primary">Entrar no Maestro</a>
+                {% endif %}
+              </div>
+            </div>
+
+            <ul class="roadmap" aria-label="Andamento do Maestro">
+              <li>Cadastro de robôs com permissões por perfil</li>
+              <li>Execução real em segundo plano com Celery</li>
+              <li>Log completo de cada execução</li>
+              <li class="pendente">Agente em Go para executar robôs em outras máquinas</li>
+              <li class="pendente">Agendamento recorrente</li>
+            </ul>
+          </article>
+
+          <div class="projects">
+            <article class="project">
+              <h3>Automação de download via CRM</h3>
+              <p>
+                Automação em Python que acessa sistemas, executa processos e faz o download
+                automatizado de arquivos.
+              </p>
+              <ul class="tags">
+                <li>Python</li>
+                <li>Playwright</li>
+                <li>RPA</li>
+              </ul>
+              <a
+                href="https://github.com/Zavan7/Automa-o-Download-via-CRM"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="project-link"
+              >Ver no GitHub</a>
+            </article>
+
+            <article class="project">
+              <h3>Desafio de automação web</h3>
+              <p>
+                Desafio de RPA com Playwright, lidando com esperas baseadas em timestamp e
+                tratamento de exceções variadas.
+              </p>
+              <ul class="tags">
+                <li>Python</li>
+                <li>Pandas</li>
+                <li>OpenPyXL</li>
+              </ul>
+              <a
+                href="https://github.com/Zavan7/desafio_rpa_cinco"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="project-link"
+              >Ver no GitHub</a>
+            </article>
+
+            <article class="project">
+              <h3>RPA Challenge</h3>
+              <p>
+                Resolução de desafios de automação web com Python, Playwright e arquitetura
+                Page Object.
+              </p>
+              <ul class="tags">
+                <li>Python</li>
+                <li>Playwright</li>
+                <li>Page Object</li>
+              </ul>
+              <a
+                href="https://github.com/Zavan7/RPA-Challenge-2.0"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="project-link"
+              >Ver no GitHub</a>
+            </article>
+
+            <article class="project">
+              <h3>Monitoramento com MongoDB</h3>
+              <p>
+                Sistema que registra execuções, armazena logs e acompanha o status das
+                automações.
+              </p>
+              <ul class="tags">
+                <li>MongoDB</li>
+                <li>Docker</li>
+                <li>Logging</li>
+              </ul>
+              <a
+                href="https://github.com/Zavan7/TesteRPA"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="project-link"
+              >Ver no GitHub</a>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- Stack -->
+      <section id="stack" class="section">
+        <div class="wrap">
+          <header class="section-head">
+            <h2>~/stack</h2>
+            <p class="section-lead">Ferramentas que uso no dia a dia do desenvolvimento.</p>
+          </header>
+
+          <ul class="stack">
+            <li>
+              <span class="stack-name">Python</span>
+              <span class="stack-use">Automações, aplicações, scripts, APIs e processamento de dados.</span>
+            </li>
+            <li>
+              <span class="stack-name">Playwright</span>
+              <span class="stack-use">Automação web moderna com Page Objects e testes automatizados.</span>
+            </li>
+            <li>
+              <span class="stack-name">Django</span>
+              <span class="stack-use">Aplicações web com autenticação, permissões e testes, como o Maestro.</span>
+            </li>
+            <li>
+              <span class="stack-name">Pandas</span>
+              <span class="stack-use">Tratamento, transformação e análise de dados em Excel e CSV.</span>
+            </li>
+            <li>
+              <span class="stack-name">SQL</span>
+              <span class="stack-use">Consultas, filtros, análise e integração com bancos de dados.</span>
+            </li>
+            <li>
+              <span class="stack-name">Docker</span>
+              <span class="stack-use">Containerização de aplicações e padronização de ambientes.</span>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Experiência -->
+      <section id="experiencia" class="section section-alt">
+        <div class="wrap">
+          <header class="section-head">
+            <h2>~/experiencia</h2>
+            <p class="section-lead">Construindo soluções orientadas ao negócio.</p>
+          </header>
+
+          <article class="job">
+            <p class="job-period"><time datetime="2025">2025</time> até hoje</p>
+
+            <div>
+              <h3>Assistente de Control Desk</h3>
+              <p class="job-company">HCosta</p>
+
+              <p>
+                Desenvolvimento e manutenção de automações para processos críticos, criação de
+                consultas SQL, tratamento de dados e implementação de soluções com Python e
+                ferramentas de RPA.
+              </p>
+
+              <ul class="job-list">
+                <li>Desenvolvimento e acompanhamento estratégico.</li>
+                <li>Criação e manutenção de relatórios automatizados.</li>
+                <li>Tratamento e consolidação de dados.</li>
+                <li>Criação e otimização de consultas SQL.</li>
+                <li>Monitoramento e registro de execuções.</li>
+              </ul>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- Contato -->
+      <section id="contato" class="section contact">
+        <div class="wrap">
+          <header class="section-head">
+            <h2>~/contato</h2>
+            <p class="section-lead">
+              Vamos construir algo eficiente? Estou disponível para conversar sobre automação,
+              RPA, Python e desenvolvimento de soluções.
+            </p>
+          </header>
+
+          <div class="actions">
+            <a href="mailto:vitorzavanj@gmail.com" class="btn btn-primary">Enviar e-mail</a>
+            <a
+              href="https://github.com/Zavan7"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="btn btn-outline"
+            >GitHub</a>
+            <a
+              href="https://www.linkedin.com/in/vitor-zavan-831907297/"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="btn btn-outline"
+            >LinkedIn</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap footer-inner">
+        <p>ZV Labs, por Vitor Zavan</p>
+        <p>© 2026</p>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,6 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.db.models import ProtectedError
-from django.test import TestCase
+from django.test import TestCase, Client
 from executions.models import Execucao
 from robots.models import Robo
 
@@ -61,3 +61,41 @@ class ExecucaoModelTest(TestCase):
         execucao.refresh_from_db()
 
         self.assertIsNone(execucao.disparado_por)
+
+
+class ExecutionViewsTest(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.usuario = User.objects.create_user(
+            username="analista", password="senha123"
+        )
+        self.robo = Robo.objects.create(
+            nome="robo-teste",
+            caminho_script="/scripts/x.py",
+            responsavel=self.usuario
+        )
+        self.execucao = Execucao.objects.create(
+            robo=self.robo, log="linha 1\nlinha 2"
+        )
+
+    def test_execution_list_redireciona_se_deslogado(self):
+        response = self.client.get("/execucoes/")
+        self.assertEqual(response.status_code, 302)
+
+    def test_execution_list_retorna_200_logado(self):
+        self.client.login(username="analista", password="senha123")
+        response = self.client.get("/execucoes/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "robo-teste")
+
+    def test_execution_detail_mostra_log(self):
+        self.client.login(username="analista", password="senha123")
+        response = self.client.get(f"/execucoes/{self.execucao.pk}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "linha 1")
+
+    def test_execution_detail_404_para_pk_inexistente(self):
+        self.client.login(username="analista", password="senha123")
+        response = self.client.get("/execucoes/99999/")
+        self.assertEqual(response.status_code, 404)
+

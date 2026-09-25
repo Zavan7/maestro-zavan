@@ -33,3 +33,18 @@ class Execucao(models.Model):
 
     def __str__(self):
         return f"{self.robo.nome} — {self.get_status_display()}"
+
+    @property
+    def duracao_formatada(self):
+        if not (self.iniciado_em and self.finalizado_em):
+            return ""
+
+        segundos = int((self.finalizado_em - self.iniciado_em).total_seconds())
+        minutos, segundos = divmod(segundos, 60)
+        horas, minutos = divmod(minutos, 60)
+
+        if horas:
+            return f"{horas}h{minutos:02d}m"
+        if minutos:
+            return f"{minutos}m{segundos:02d}s"
+        return f"{segundos}s"
