@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Agendamento — Maestro{% endblock %}
+
+{% block path %}~/maestro/agendamentos/{{ titulo }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/scheduler.css' %}" />
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>~/agendamentos/{{ titulo }}</h1>
+</div>
+
+<form method="post" class="form-card">
+  {% csrf_token %}
+
+  {% if form.non_field_errors %}
+  <p class="error-message">{{ form.non_field_errors.0 }}</p>
+  {% endif %}
+
+  <label class="field-label" for="{{ form.robo.id_for_label }}">robô</label>
+  {{ form.robo }}
+
+  <label class="field-label" for="{{ form.horario.id_for_label }}">horário</label>
+  {{ form.horario }}
+  {% if form.horario.errors %}
+  <p class="error-message">{{ form.horario.errors.0 }}</p>
+  {% endif %}
+
+  <span class="field-label">dias</span>
+  <div class="dias-semana">
+    {% for campo in form.campos_dos_dias %}
+    <label class="dia">{{ campo }} {{ campo.label }}</label>
+    {% endfor %}
+  </div>
+
+  <label class="check">{{ form.ativo }} ativo</label>
+
+  <button type="submit" class="btn">salvar</button>
+</form>
+{% endblock %}

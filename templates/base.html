@@ -45,8 +45,11 @@
           >
           execuções
         </a>
+        <a href="{% url 'schedule_list' %}"
+          class="nav-link {% if 'schedule' in request.resolver_match.url_name %}active{% endif %}">
+          agendamentos
+      </a>
         <span class="nav-divider"></span>
-          <span class="nav-link disabled">agendamentos <em>em breve</em></span>
           <span class="nav-link disabled">configurações <em>em breve</em></span>
         </nav>
       </aside>

@@ -1,0 +1,36 @@
+.dias-semana {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.dia,
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.dia:has(input:checked),
+.check:has(input:checked) {
+  border-color: var(--accent-text);
+  color: var(--accent-text);
+}
+
+.check {
+  align-self: flex-start;
+  margin-bottom: 1.25rem;
+}
+
+.dias-semana input,
+.check input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent-text);
+}

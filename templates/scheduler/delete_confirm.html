@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Excluir agendamento — Maestro{% endblock %}
+
+{% block path %}~/maestro/agendamentos/{{ agendamento.pk }}/excluir{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>~/agendamentos/{{ agendamento.pk }}/excluir</h1>
+</div>
+
+<div class="confirm-card">
+  <p>Excluir o agendamento de <strong>{{ agendamento.robo.nome }}</strong> às {{ agendamento.horario|time:"H:i" }}?</p>
+  <p class="page-subtitle">As execuções já feitas continuam no histórico.</p>
+
+  <form method="post">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-danger">confirmar exclusão</button>
+    <a href="{% url 'schedule_list' %}" class="link-btn">cancelar</a>
+  </form>
+</div>
+{% endblock %}

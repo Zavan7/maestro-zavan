@@ -3,20 +3,13 @@
 
 {% block title %}Robôs — Maestro{% endblock %}
 
+{% block path %}~/maestro/robots{% endblock %}
+
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/robots.css' %}" />
 {% endblock %}
 
 {% block content %}
-
-{% if messages %}
-  {% for message in messages %}
-    <div class="message {{ message.tags }}">
-      {{ message }}
-    </div>
-  {% endfor %}
-{% endif %}
-
 <div class="page-header">
   <h1>~/robots</h1>
 </div>
@@ -26,6 +19,8 @@
     <tr>
       <th>Nome</th>
       <th>Status</th>
+      <th>Agora</th>
+      <th>Próxima execução</th>
       <th>Última execução</th>
       <th>Ações</th>
     </tr>
@@ -40,46 +35,50 @@
         </details>
       </td>
       <td>
-        <span class="status-badge status-{{ robo.status }}">
-          {{ robo.get_status_display }}
-        </span>
+        <span class="status-badge status-{{ robo.status }}">{{ robo.get_status_display }}</span>
       </td>
       <td>
-        {% with ultima=robo.execucoes_recentes|first %}
-          {% if ultima %}
-            <span class="status-badge status-{{ ultima.status }}">
-              {{ ultima.get_status_display }}
-            </span>
-            {% if ultima.iniciado_em %}
-              <span class="last-run-time">{{ ultima.iniciado_em|timesince }} atrás</span>
-            {% endif %}
-          {% else %}
-            <span class="status-badge status-pendente">sem execuções ainda</span>
-          {% endif %}
-        {% endwith %}
+        <span class="estado estado-{{ robo.estado_agora }}">{{ robo.texto_agora }}</span>
       </td>
       <td>
+        <span class="estado estado-{{ robo.estado_agenda }}">{{ robo.texto_agenda }}</span>
+        {% if robo.agenda_bloqueada %}
+        <span class="last-run-time">será recusado: robô {{ robo.get_status_display|lower }}</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if robo.ultima_execucao %}
+        <span class="status-badge status-{{ robo.ultima_execucao.status }}">{{ robo.ultima_execucao.get_status_display }}</span>
+        {% if robo.ultima_execucao.iniciado_em %}
+        <span class="last-run-time">{{ robo.ultima_execucao.iniciado_em|timesince }} atrás</span>
+        {% endif %}
+        {% else %}
+        <span class="estado estado-manual">nunca executado</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if perms.robots.change_robo %}
         <a href="{% url 'robot_edit' robo.id %}" class="link-btn">editar</a>
+        {% endif %}
+        {% if perms.robots.delete_robo %}
         <a href="{% url 'robot_exclusion' robo.id %}" class="link-btn">excluir</a>
-
-        {% with ultima=robo.execucoes_recentes|first %}
-          {% if ultima and ultima.status == "rodando" %}
-            <form method="post" action="{% url 'robot_stop' robo.id %}" class="inline-form">
-              {% csrf_token %}
-              <button type="submit" class="link-btn link-btn-stop">parar</button>
-            </form>
-          {% elif robo.status == "ativo" %}
-            <form method="post" action="{% url 'robot_start' robo.id %}" class="inline-form">
-              {% csrf_token %}
-              <button type="submit" class="link-btn link-btn-start">iniciar</button>
-            </form>
-          {% endif %}
-        {% endwith %}
+        {% endif %}
+        {% if robo.estado_agora == "rodando" %}
+        <form method="post" action="{% url 'robot_stop' robo.id %}" class="inline-form">
+          {% csrf_token %}
+          <button type="submit" class="link-btn link-btn-stop">parar</button>
+        </form>
+        {% elif robo.status == "ativo" %}
+        <form method="post" action="{% url 'robot_start' robo.id %}" class="inline-form">
+          {% csrf_token %}
+          <button type="submit" class="link-btn link-btn-start">iniciar</button>
+        </form>
+        {% endif %}
       </td>
     </tr>
     {% empty %}
     <tr>
-      <td colspan="4">Nenhum robô cadastrado ainda.</td>
+      <td colspan="6">Nenhum robô cadastrado ainda.</td>
     </tr>
     {% endfor %}
   </tbody>

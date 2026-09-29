@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "accounts",
     "executions",
     "robots",
+    "scheduler",
 ]
 
 MIDDLEWARE = [
@@ -112,3 +113,4 @@ EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 # Celery e execução de robôs
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 ROBOS_SCRIPTS_DIR = Path(os.getenv("ROBOS_SCRIPTS_DIR", BASE_DIR / "scripts"))
+CELERY_TIMEZONE = TIME_ZONE

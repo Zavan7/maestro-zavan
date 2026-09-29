@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Agendamentos — Maestro{% endblock %}
+
+{% block path %}~/maestro/agendamentos{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/scheduler.css' %}" />
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>~/agendamentos</h1>
+  {% if perms.scheduler.add_agendamento %}
+  <a href="{% url 'schedule_create' %}" class="btn">novo agendamento</a>
+  {% endif %}
+</div>
+
+<table class="robots-table">
+  <thead>
+    <tr>
+      <th>Próximo disparo</th>
+      <th>Robô</th>
+      <th>Robô agora</th>
+      <th>Horário e dias</th>
+      <th>Último disparo</th>
+      <th>Ações</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for agendamento in agendamentos %}
+    <tr>
+      <td>
+        <span class="estado estado-{{ agendamento.estado }}">{{ agendamento.texto_estado }}</span>
+        {% if agendamento.bloqueado %}
+        <span class="last-run-time">será recusado: robô {{ agendamento.robo.get_status_display|lower }}</span>
+        {% endif %}
+      </td>
+      <td>{{ agendamento.robo.nome }}</td>
+      <td>
+        <span class="estado estado-{{ agendamento.estado_robo }}">{{ agendamento.estado_robo }}</span>
+      </td>
+      <td>
+        {{ agendamento.horario|time:"H:i" }}
+        <span class="last-run-time">{{ agendamento.dias_formatados }}</span>
+      </td>
+      <td>{{ agendamento.ultimo_disparo|date:"d/m H:i"|default:"—" }}</td>
+      <td>
+        {% if perms.scheduler.change_agendamento %}
+        <a href="{% url 'schedule_edit' agendamento.pk %}" class="link-btn">editar</a>
+        <form method="post" action="{% url 'schedule_toggle' agendamento.pk %}" class="inline-form">
+          {% csrf_token %}
+          <button type="submit" class="link-btn">
+            {% if agendamento.ativo %}
+            pausar
+            {% else %}
+            retomar
+            {% endif %}
+          </button>
+        </form>
+        {% endif %}
+        {% if perms.scheduler.delete_agendamento %}
+        <a href="{% url 'schedule_delete' agendamento.pk %}" class="link-btn">excluir</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% empty %}
+    <tr>
+      <td colspan="6">Nenhum agendamento ainda. Crie um para um robô rodar sozinho no horário certo.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

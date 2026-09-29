@@ -351,3 +351,113 @@ input:-webkit-autofill:focus {
 .flash-error::before {
   content: "✗ ";
 }
+
+.form-card {
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.form-card textarea,
+.form-card select {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  margin-bottom: 1rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.9rem;
+}
+
+.form-card input {
+  margin-bottom: 1rem;
+}
+
+.form-card .btn {
+  align-self: flex-start;
+}
+
+.confirm-card {
+  max-width: 480px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+
+.btn-danger {
+  background: var(--error);
+  margin-right: 1rem;
+}
+
+.inline-form {
+  display: inline;
+  margin: 0;
+}
+
+a.btn {
+  display: inline-block;
+  text-decoration: none;
+}
+
+.estado {
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.estado-rodando {
+  color: var(--accent-text);
+}
+
+.estado-agendado {
+  color: #4dae50;
+}
+
+.estado-pausado {
+  color: #e8983a;
+}
+
+.estado-parado {
+  color: var(--error);
+}
+
+.estado-manual {
+  color: var(--text-muted);
+}
+
+.estado-rodando::before {
+  content: "▶ ";
+}
+
+.estado-agendado::before {
+  content: "◷ ";
+}
+
+.estado-pausado::before {
+  content: "⏸ ";
+}
+
+.estado-parado::before {
+  content: "■ ";
+}
+
+.tag {
+  display: inline-block;
+  margin-right: 0.4rem;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  vertical-align: middle;
+}
+
+.tag-agendamento {
+  color: #4dae50;
+}
+
+.tag-agendamento::before {
+  content: "◷ ";
+}

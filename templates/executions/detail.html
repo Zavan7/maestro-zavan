@@ -3,6 +3,8 @@
 
 {% block title %}Execução #{{ execucao.id }} — Maestro{% endblock %}
 
+{% block path %}~/maestro/execucoes/{{ execucao.id }}{% endblock %}
+
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/executions.css' %}" />
 {% if execucao.status == "pendente" or execucao.status == "rodando" %}
@@ -23,14 +25,19 @@
   <div>
     <span class="field-label">status</span>
     <p>
-      <span class="status-badge status-{{ execucao.status }}">
-        {{ execucao.get_status_display }}
-      </span>
+      <span class="status-badge status-{{ execucao.status }}">{{ execucao.get_status_display }}</span>
     </p>
   </div>
   <div>
     <span class="field-label">disparado por</span>
-    <p>{{ execucao.disparado_por.username|default:"—" }}</p>
+    <p>
+      {% if execucao.origem == "agendamento" %}
+      <span class="tag tag-agendamento">agendado</span>
+      {{ execucao.agendamento.criado_por.username|default:"—" }}
+      {% else %}
+      {{ execucao.disparado_por.username|default:"—" }}
+      {% endif %}
+    </p>
   </div>
   <div>
     <span class="field-label">iniciado em</span>
@@ -39,6 +46,10 @@
   <div>
     <span class="field-label">finalizado em</span>
     <p>{{ execucao.finalizado_em|default:"—" }}</p>
+  </div>
+  <div>
+    <span class="field-label">duração</span>
+    <p>{{ execucao.duracao_formatada|default:"—" }}</p>
   </div>
 </div>
 

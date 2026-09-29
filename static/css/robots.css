@@ -58,10 +58,12 @@
   background: rgba(77, 174, 80, 0.15);
   color: #4dae50;
 }
+
 .status-inativo {
   background: rgba(107, 111, 118, 0.15);
   color: var(--text-muted);
 }
+
 .status-manutencao {
   background: rgba(232, 152, 58, 0.15);
   color: var(--accent);
@@ -72,14 +74,17 @@
   background: rgba(77, 174, 80, 0.15);
   color: #4dae50;
 }
+
 .status-falha {
   background: rgba(229, 72, 77, 0.15);
   color: var(--error);
 }
+
 .status-rodando {
   background: rgba(107, 111, 118, 0.15);
   color: var(--text-muted);
 }
+
 .status-pendente {
   background: rgba(232, 152, 58, 0.15);
   color: var(--accent);
@@ -117,50 +122,6 @@
   color: var(--text-muted);
   font-size: 0.8rem;
   border-left: 2px solid var(--border);
-}
-
-.form-card {
-  max-width: 480px;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.form-card textarea,
-.form-card select {
-  width: 100%;
-  padding: 0.6rem 0.7rem;
-  margin-bottom: 1rem;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 0.9rem;
-}
-
-.form-card input {
-  margin-bottom: 1rem;
-}
-
-.form-card .btn {
-  align-self: flex-start;
-}
-.confirm-card {
-  max-width: 480px;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 1.5rem;
-}
-
-.btn-danger {
-  background: var(--error);
-  margin-right: 1rem;
-}
-.inline-form {
-  display: inline;
-  margin: 0;
 }
 
 .link-btn-start {

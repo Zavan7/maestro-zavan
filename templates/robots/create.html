@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Editar Robô — Maestro{% endblock %}
+{% block title %}Cadastrar robô — Maestro{% endblock %}
+
+{% block path %}~/maestro/robots/novo{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/robots.css' %}" />
@@ -9,7 +11,7 @@
 
 {% block content %}
 <div class="page-header">
-  <h1>~/robots/{{ robo.id }}/editar</h1>
+  <h1>~/robots/novo</h1>
 </div>
 
 <form method="post" class="form-card">
@@ -18,7 +20,7 @@
   <label class="field-label">nome</label>
   {{ form.nome }}
   {% if form.nome.errors %}
-    <p class="error-message">{{ form.nome.errors.0 }}</p>
+  <p class="error-message">{{ form.nome.errors.0 }}</p>
   {% endif %}
 
   <label class="field-label">descrição</label>
@@ -27,12 +29,12 @@
   <label class="field-label">caminho do script</label>
   {{ form.caminho_script }}
   {% if form.caminho_script.errors %}
-    <p class="error-message">{{ form.caminho_script.errors.0 }}</p>
+  <p class="error-message">{{ form.caminho_script.errors.0 }}</p>
   {% endif %}
 
   <label class="field-label">status</label>
   {{ form.status }}
 
-  <button type="submit" class="btn">salvar alterações</button>
+  <button type="submit" class="btn">cadastrar</button>
 </form>
 {% endblock %}

@@ -3,6 +3,8 @@
 
 {% block title %}Execuções — Maestro{% endblock %}
 
+{% block path %}~/maestro/execucoes{% endblock %}
+
 {% block content %}
 <div class="page-header">
   <h1>~/execucoes</h1>
@@ -21,21 +23,24 @@
     {% for execucao in execucoes %}
     <tr>
       <td>
-        <a href="{% url 'execution_detail' execucao.id %}" class="table-link">
-          {{ execucao.robo.nome }}
-        </a>
+        <a href="{% url 'execution_detail' execucao.id %}" class="table-link">{{ execucao.robo.nome }}</a>
       </td>
       <td>
-        <span class="status-badge status-{{ execucao.status }}">
-          {{ execucao.get_status_display }}
-        </span>
+        <span class="status-badge status-{{ execucao.status }}">{{ execucao.get_status_display }}</span>
       </td>
-      <td>{{ execucao.disparado_por.username|default:"—" }}</td>
+      <td>
+        {% if execucao.origem == "agendamento" %}
+        <span class="tag tag-agendamento">agendado</span>
+        {{ execucao.agendamento.criado_por.username|default:"—" }}
+        {% else %}
+        {{ execucao.disparado_por.username|default:"—" }}
+        {% endif %}
+      </td>
       <td>
         {% if execucao.iniciado_em %}
-          {{ execucao.iniciado_em|timesince }} atrás
+        {{ execucao.iniciado_em|timesince }} atrás
         {% else %}
-          —
+        —
         {% endif %}
       </td>
     </tr>
