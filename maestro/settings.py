@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "executions",
     "robots",
     "scheduler",
+    "config",
 ]
 
 MIDDLEWARE = [

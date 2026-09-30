@@ -11,46 +11,39 @@
     <div class="app-shell">
       <aside class="sidebar">
         <div class="sidebar-logo">
-          <img
-            src="{% static 'img/logo-mark.svg' %}"
-            alt="Maestro"
-            class="sidebar-mark"
-          />
+          <img src="{% static 'img/logo-mark.svg' %}" alt="Maestro" class="sidebar-mark" />
         </div>
 
         <nav class="sidebar-nav">
-          <a
-            href="{% url 'home' %}"
-            class="nav-link {% if request.resolver_match.url_name == 'home' %}active{% endif %}"
-          >
+          <a href="{% url 'home' %}"
+             class="nav-link {% if request.resolver_match.url_name == 'home' %}active{% endif %}">
             início
           </a>
-          <a
-            href="{% url 'robot_list' %}"
-            class="nav-link {% if request.resolver_match.url_name == 'robot_list' %}active{% endif %}"
-          >
+          <a href="{% url 'robot_list' %}"
+             class="nav-link {% if request.resolver_match.url_name == 'robot_list' %}active{% endif %}">
             robôs
           </a>
-          <a
-            href="{% url 'robot_create' %}"
-            class="nav-link {% if request.resolver_match.url_name == 'robot_create' %}active{% endif %}"
-          >
+          <a href="{% url 'robot_create' %}"
+             class="nav-link {% if request.resolver_match.url_name == 'robot_create' %}active{% endif %}">
             cadastrar robô
           </a>
+          <a href="{% url 'execution_list' %}"
+             class="nav-link {% if request.resolver_match.url_name == 'execution_list' %}active{% endif %}">
+            execuções
+          </a>
+          <a href="{% url 'schedule_list' %}"
+             class="nav-link {% if 'schedule' in request.resolver_match.url_name %}active{% endif %}">
+            agendamentos
+          </a>
 
-          
-          <a
-          href="{% url 'execution_list' %}"
-          class="nav-link {% if request.resolver_match.url_name == 'execution_list' %}active{% endif %}"
-          >
-          execuções
-        </a>
-        <a href="{% url 'schedule_list' %}"
-          class="nav-link {% if 'schedule' in request.resolver_match.url_name %}active{% endif %}">
-          agendamentos
-      </a>
-        <span class="nav-divider"></span>
-          <span class="nav-link disabled">configurações <em>em breve</em></span>
+          {% if perms.config %}
+          <span class="nav-divider"></span>
+
+          <a href="{% url 'config_home' %}"
+             class="nav-link {% if 'config' in request.resolver_match.url_name %}active{% endif %}">
+            configurações
+          </a>
+          {% endif %}
         </nav>
       </aside>
 

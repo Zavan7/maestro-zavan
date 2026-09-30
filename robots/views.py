@@ -110,7 +110,7 @@ def robot_exclusion(request, pk):
     return render(request, "robots/exclusion_confirm.html", {"robo": robo})
 
 
-@login_required
+@permission_required("robots.executar_robo", raise_exception=True)
 def robot_start(request, pk):
     robo = get_object_or_404(Robo, pk=pk)
 
@@ -125,7 +125,7 @@ def robot_start(request, pk):
     return redirect("robot_list")
 
 
-@login_required
+@permission_required("robots.executar_robo", raise_exception=True)
 def robot_stop(request, pk):
     robo = get_object_or_404(Robo, pk=pk)
 

@@ -63,6 +63,7 @@
         {% if perms.robots.delete_robo %}
         <a href="{% url 'robot_exclusion' robo.id %}" class="link-btn">excluir</a>
         {% endif %}
+        {% if perms.robots.executar_robo %}
         {% if robo.estado_agora == "rodando" %}
         <form method="post" action="{% url 'robot_stop' robo.id %}" class="inline-form">
           {% csrf_token %}
@@ -73,6 +74,7 @@
           {% csrf_token %}
           <button type="submit" class="link-btn link-btn-start">iniciar</button>
         </form>
+        {% endif %}
         {% endif %}
       </td>
     </tr>

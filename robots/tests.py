@@ -4,8 +4,12 @@ from django.db.models import ProtectedError
 from django.test import TestCase, Client
 
 from robots.models import Robo
+from robots.services import DisparoRecusado, disparar_execucao
 
 from executions.models import Execucao
+
+from unittest import mock
+
 
 User = get_user_model()
 
@@ -125,3 +129,54 @@ class RobotViewsTest(TestCase):
         self.assertFalse(
             self.robo.execucoes.filter(status=Execucao.Status.RODANDO).exists()
         )
+    def test_robot_start_sem_permissao_recebe_403(self):
+        User.objects.create_user(username="visitante", password="senha123")
+        self.client.login(username="visitante", password="senha123")
+
+        response = self.client.post(f"/robots/{self.robo.pk}/iniciar/")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(self.robo.execucoes.exists())
+
+
+class DisparoTest(TestCase):
+    def setUp(self):
+        self.usuario = User.objects.create_user(username="analista", password="senha123")
+        self.robo = Robo.objects.create(
+            nome="robo-teste", caminho_script="teste.py", responsavel=self.usuario
+        )
+
+    def test_cria_execucao_pendente_com_quem_disparou(self):
+        execucao = disparar_execucao(self.robo, disparado_por=self.usuario)
+
+        self.assertEqual(execucao.status, Execucao.Status.PENDENTE)
+        self.assertEqual(execucao.origem, Execucao.Origem.MANUAL)
+        self.assertEqual(execucao.disparado_por, self.usuario)
+
+    def test_recusa_robo_inativo(self):
+        self.robo.status = Robo.Status.INATIVO
+        self.robo.save()
+
+        with self.assertRaises(DisparoRecusado):
+            disparar_execucao(self.robo)
+        self.assertFalse(self.robo.execucoes.exists())
+
+    def test_recusa_quando_ja_tem_execucao_pendente(self):
+        Execucao.objects.create(robo=self.robo, status=Execucao.Status.PENDENTE)
+
+        with self.assertRaises(DisparoRecusado):
+            disparar_execucao(self.robo)
+
+    def test_recusa_quando_ja_tem_execucao_rodando(self):
+        Execucao.objects.create(robo=self.robo, status=Execucao.Status.RODANDO)
+
+        with self.assertRaises(DisparoRecusado):
+            disparar_execucao(self.robo)
+
+    def test_envia_a_tarefa_so_depois_do_commit(self):
+        with mock.patch("robots.services.executar_robo") as tarefa:
+            with self.captureOnCommitCallbacks(execute=True):
+                execucao = disparar_execucao(self.robo)
+                tarefa.delay.assert_not_called()
+
+        tarefa.delay.assert_called_once_with(execucao.id)

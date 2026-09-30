@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Usuários e acesso — Maestro{% endblock %}
+
+{% block path %}~/maestro/configuracoes/usuarios{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/config.css' %}" />
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>~/configuracoes/usuarios</h1>
+  <a href="{% url 'config_home' %}" class="link-btn">voltar para configurações</a>
+</div>
+
+<table class="robots-table">
+  <thead>
+    <tr>
+      <th>Usuário</th>
+      <th>Grupo</th>
+      <th>Situação</th>
+      <th>Último acesso</th>
+      <th>Ações</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for usuario in usuarios %}
+    <tr class="{% if not usuario.is_active %}linha-inativa{% endif %}">
+      <td>
+        {{ usuario.username }}
+        {% if usuario.is_superuser %}
+        <span class="tag tag-superusuario">superusuário</span>
+        {% endif %}
+        {% if usuario.pk == user.pk %}
+        <span class="last-run-time">você</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if usuario.editavel %}
+        <form method="post" action="{% url 'config_user_group' usuario.pk %}" class="grupo-form">
+          {% csrf_token %}
+          <select name="grupo" aria-label="grupo de {{ usuario.username }}">
+            <option value="">sem grupo</option>
+            {% for grupo in grupos %}
+            <option value="{{ grupo.pk }}" {% if usuario.grupo_atual.pk == grupo.pk %}selected{% endif %}>{{ grupo.name }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="link-btn">salvar</button>
+        </form>
+        {% else %}
+        {{ usuario.grupo_atual.name|default:"sem grupo" }}
+        {% endif %}
+      </td>
+      <td>
+        {% if usuario.is_active %}
+        <span class="status-badge status-ativo">ativo</span>
+        {% else %}
+        <span class="status-badge status-inativo">desativado</span>
+        {% endif %}
+      </td>
+      <td>{{ usuario.last_login|date:"d/m/Y H:i"|default:"nunca entrou" }}</td>
+      <td>
+        {% if usuario.editavel %}
+        <form method="post" action="{% url 'config_user_toggle' usuario.pk %}" class="inline-form">
+          {% csrf_token %}
+          {% if usuario.is_active %}
+          <button type="submit" class="link-btn link-btn-stop">desativar</button>
+          {% else %}
+          <button type="submit" class="link-btn link-btn-start">reativar</button>
+          {% endif %}
+        </form>
+        {% else %}
+        <span class="last-run-time">sem ações</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2 class="section-title">alterações recentes</h2>
+<ol class="registro-acesso">
+  {% for registro in registros %}
+  <li>
+    <time>{{ registro.criado_em|date:"d/m H:i" }}</time>
+    <span class="registro-acao">{{ registro.get_acao_display }}</span>
+    <span>{{ registro.detalhe }}</span>
+    <span class="registro-autor">por {{ registro.autor.username|default:"—" }}</span>
+  </li>
+  {% empty %}
+  <li class="config-vazio">Nenhuma alteração de acesso registrada ainda.</li>
+  {% endfor %}
+</ol>
+{% endblock %}

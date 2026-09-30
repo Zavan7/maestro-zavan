@@ -1,5 +1,5 @@
-from django.db import models
 from django.conf import settings
+from django.db import models
 
 
 class Robo(models.Model):
@@ -22,6 +22,11 @@ class Robo(models.Model):
         related_name="robos",
     )
     criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        permissions = [
+            ("executar_robo", "Pode iniciar e parar robôs"),
+        ]
 
     def __str__(self):
         return self.nome

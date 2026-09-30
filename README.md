@@ -1,12 +1,12 @@
 # Maestro
 
-Orquestrador de automações RPA construído em Django. Centraliza o cadastro, a execução e o histórico de robôs de automação, com controle de acesso por perfil e registro completo de cada execução.
+Orquestrador de automações RPA construído em Django. Centraliza o cadastro, a execução, o agendamento e o histórico de robôs de automação, com controle de acesso por perfil e registro completo de cada execução.
 
 Primeiro produto da **ZV Labs**.
 
 > **Sobre o projeto:** o Maestro é desenvolvido como projeto de estudo, dentro de uma trilha de aprendizado em Python, RPA e desenvolvimento web. Apesar disso, é documentado, testado e versionado como um projeto real, e este README descreve o sistema e o seu andamento, não o conteúdo de estudo.
 
-**Status:** em desenvolvimento. Execução de robôs funcionando localmente via Celery; próxima fase é a execução remota por um agente em Go.
+**Versão atual:** 1.0.0, com o agendamento e a aba de configurações já prontos para a próxima versão. Veja o [CHANGELOG](CHANGELOG.md).
 
 ---
 
@@ -20,6 +20,7 @@ Primeiro produto da **ZV Labs**.
 - [Rotas](#rotas)
 - [Perfis e permissões](#perfis-e-permissões)
 - [Execução de robôs](#execução-de-robôs)
+- [Agendamento](#agendamento)
 - [Modelo de dados](#modelo-de-dados)
 - [Testes](#testes)
 - [Segurança](#segurança)
@@ -38,16 +39,22 @@ Primeiro produto da **ZV Labs**.
 - Painel com a distribuição dos robôs por status, atividade dos últimos 14 dias e console com as execuções recentes
 - Cadastro, edição e exclusão de robôs, com validação via `ModelForm`
 - Execução real de robôs em segundo plano (Celery + Redis), com captura do log
-- Histórico global de execuções e tela de detalhe com o log numerado e linhas de erro destacadas
+- Agendamento recorrente por horário e dias da semana, com pausar e retomar
+- Estados visuais nas listas: rodando, agendado, pausado e parado, e a próxima execução de cada robô
+- Histórico global de execuções, com a origem de cada uma (manual ou agendamento), e tela de detalhe com duração, log numerado e linhas de erro destacadas
 - Atualização automática da tela de detalhe enquanto a execução está em andamento
-- Controle de acesso por grupos (Operador e Administrador RPA)
+- Controle de acesso por grupos (Operador, Administrador RPA e Administrador do sistema)
+- Aba de configurações com gestão de usuários: troca de grupo, desativação e reativação, com registro de todas as alterações
 - Mensagens de confirmação e de erro em todas as ações
 
 **Planejado**
 
+- Status do sistema na aba de configurações (Redis, worker e agendador)
+- Retenção do histórico com limpeza automática
+- Criação de usuários pela aba de configurações
+- Limites padrão de execução editáveis (hoje em prévia)
 - Agente em Go para executar robôs em outras máquinas, conectado ao Maestro por WebSocket
 - Parada real de execuções em andamento
-- Agendamento recorrente
 - API REST
 
 ---
@@ -59,6 +66,7 @@ flowchart LR
     U[Usuário] -->|HTTP| D[Django<br/>Maestro]
     D --> DB[(Banco de dados)]
     D -->|enfileira task| R[(Redis)]
+    B[Beat<br/>a cada minuto] -->|verifica agendamentos| R
     R --> W[Worker Celery]
     W -->|subprocess| S[Script do robô<br/>ROBOS_SCRIPTS_DIR]
     W -->|status e log| DB
@@ -66,7 +74,9 @@ flowchart LR
     A -. executa .-> S2[Robô na máquina remota]
 ```
 
-Hoje, quando um robô é iniciado, o Django cria uma `Execucao` com status `pendente` e envia uma task para o Redis. O worker do Celery pega a task, executa o script do robô e grava o status final e o log no banco.
+Quando um robô é iniciado, pelo botão ou por um agendamento, o disparo passa por uma única função, `disparar_execucao`, que aplica as regras, cria uma `Execucao` com status `pendente` e envia uma task para o Redis. O worker do Celery pega a task, executa o script do robô e grava o status final e o log no banco.
+
+A cada minuto, o beat do Celery envia a tarefa que verifica os agendamentos vencidos e os dispara pelo mesmo caminho.
 
 Na próxima fase, a execução passa para um **agente escrito em Go**, instalado na máquina onde os robôs vivem. O agente abre uma conexão WebSocket com o Maestro, recebe os comandos de iniciar e parar, executa o robô no ambiente dele e devolve status e log. O Django continua sendo o ponto central de cadastro, permissões e histórico; o robô continua sendo Python.
 
@@ -81,8 +91,8 @@ Na próxima fase, a execução passa para um **agente escrito em Go**, instalado
 | Banco de dados | SQLite | Em uso (PostgreSQL previsto para produção) |
 | Frontend | Django Templates, HTML e CSS | Em uso |
 | Fila e execução assíncrona | Celery + Redis | Em uso |
+| Agendamento | Celery beat, com uma tarefa própria (sem `django-celery-beat`) | Em uso |
 | Execução remota | Agente em Go + Django Channels (WebSocket) | Planejado |
-| Agendamento | django-celery-beat | Planejado |
 | API | Django REST Framework + JWT | Planejado |
 
 ---
@@ -92,11 +102,22 @@ Na próxima fase, a execução passa para um **agente escrito em Go**, instalado
 ```
 maestro-zavan/
 ├── accounts/            # autenticação e painel
-├── robots/              # cadastro de robôs, disparo de execução, task Celery
+├── robots/              # cadastro de robôs e disparo de execuções
 │   ├── forms.py
-│   ├── tasks.py
+│   ├── services.py      # disparar_execucao: o caminho único de disparo
+│   ├── tasks.py         # task que executa o robô
 │   └── views.py
 ├── executions/          # histórico e detalhe de execuções
+├── scheduler/           # agendamentos e a tarefa que os verifica a cada minuto
+│   ├── forms.py
+│   ├── models.py
+│   ├── tasks.py
+│   └── views.py
+├── config/              # aba de configurações, permissões e gestão de acesso
+│   ├── migrations/      # inclui a migração de dados que cria os grupos
+│   ├── models.py
+│   ├── services.py      # regras de alteração de acesso
+│   └── views.py
 ├── maestro/             # configurações, URLs e app Celery
 │   ├── celery.py
 │   ├── settings.py
@@ -111,7 +132,10 @@ maestro-zavan/
 │   ├── portfolio/
 │   ├── accounts/
 │   ├── robots/
-│   └── executions/
+│   ├── executions/
+│   ├── scheduler/
+│   └── config/
+├── CHANGELOG.md
 ├── manage.py
 └── pyproject.toml
 ```
@@ -161,19 +185,7 @@ uv run manage.py migrate
 uv run manage.py createsuperuser
 ```
 
-Crie os grupos de acesso (uma vez só):
-
-```bash
-uv run manage.py shell
-```
-
-```python
-from django.contrib.auth.models import Group, Permission
-
-Group.objects.get_or_create(name="Operador")
-admin_rpa, _ = Group.objects.get_or_create(name="Administrador RPA")
-admin_rpa.permissions.set(Permission.objects.filter(content_type__app_label="robots"))
-```
+O `migrate` também cria os três grupos de acesso com as permissões certas. Não é preciso nenhum comando manual.
 
 ### Execução
 
@@ -184,8 +196,12 @@ uv run manage.py runserver
 ```
 
 ```bash
-uv run celery -A maestro worker --loglevel=info
+uv run celery -A maestro worker -B --loglevel=info
 ```
+
+O `-B` roda o agendador (beat) junto com o worker, o que basta em desenvolvimento. Em produção, o beat roda como processo separado e único: `uv run celery -A maestro beat --loglevel=info`.
+
+O worker não recarrega sozinho: depois de alterar models ou tarefas, reinicie-o.
 
 Acesse `http://localhost:8000/`.
 
@@ -203,22 +219,44 @@ Acesse `http://localhost:8000/`.
 | `/robots/novo/` | `robots.add_robo` | Cadastro de robô |
 | `/robots/<id>/editar/` | `robots.change_robo` | Edição de robô |
 | `/robots/<id>/excluir/` | `robots.delete_robo` | Exclusão com confirmação |
-| `/robots/<id>/iniciar/` | Autenticado (POST) | Dispara uma execução |
-| `/robots/<id>/parar/` | Autenticado (POST) | Encerra a execução em andamento |
+| `/robots/<id>/iniciar/` | `robots.executar_robo` (POST) | Dispara uma execução |
+| `/robots/<id>/parar/` | `robots.executar_robo` (POST) | Encerra a execução em andamento |
 | `/execucoes/` | Autenticado | Histórico de execuções |
 | `/execucoes/<id>/` | Autenticado | Detalhe e log de uma execução |
+| `/agendamentos/` | Autenticado | Lista de agendamentos |
+| `/agendamentos/novo/` | `scheduler.add_agendamento` | Cadastro de agendamento |
+| `/agendamentos/<id>/editar/` | `scheduler.change_agendamento` | Edição de agendamento |
+| `/agendamentos/<id>/alternar/` | `scheduler.change_agendamento` (POST) | Pausar ou retomar |
+| `/agendamentos/<id>/excluir/` | `scheduler.delete_agendamento` | Exclusão com confirmação |
+| `/configuracoes/` | Alguma permissão do app `config` | Aba de configurações |
+| `/configuracoes/usuarios/` | `config.gerenciar_usuarios` | Usuários e acesso |
+| `/configuracoes/usuarios/<id>/grupo/` | `config.gerenciar_usuarios` (POST) | Troca de grupo |
+| `/configuracoes/usuarios/<id>/alternar/` | `config.gerenciar_usuarios` (POST) | Desativar ou reativar |
 | `/admin/` | Superusuário | Admin do Django |
 
 ---
 
 ## Perfis e permissões
 
-| Perfil | Pode |
+| Grupo | Pode |
 |---|---|
-| Operador | Ver robôs e execuções, iniciar e parar execuções |
-| Administrador RPA | Tudo do Operador, mais cadastrar, editar e excluir robôs |
+| Operador | Ver robôs, execuções e agendamentos; iniciar e parar execuções |
+| Administrador RPA | Tudo do Operador, mais cadastrar, editar e excluir robôs e agendamentos |
+| Administrador do sistema | Iniciar e parar execuções e acessar todas as seções da aba de configurações |
 
-As permissões são verificadas nas views com `@permission_required(..., raise_exception=True)`: um usuário autenticado sem permissão recebe **403**, e não um redirecionamento para o login. Os botões correspondentes também são ocultados na interface, mas a proteção real é a da view.
+Permissões próprias do projeto, além das que o Django cria para cada model:
+
+| Permissão | Libera |
+|---|---|
+| `robots.executar_robo` | Iniciar e parar robôs |
+| `config.gerenciar_usuarios` | Usuários e acesso |
+| `config.ver_status_sistema` | Status do sistema |
+| `config.gerenciar_retencao` | Retenção do histórico |
+| `config.gerenciar_limites` | Limites padrão de execução (reservada) |
+
+Os grupos são definidos em `config/migrations/0002_grupos_de_acesso.py` e criados pelo `migrate`. As permissões são verificadas nas views: um usuário autenticado sem permissão recebe **403**, e não um redirecionamento para o login. Os botões correspondentes também são ocultados na interface, mas a proteção real é a da view.
+
+Na gestão de usuários, ninguém altera o próprio acesso, e superusuários só podem ser alterados por outro superusuário. Usuários são desativados, nunca excluídos, e cada alteração de acesso fica registrada com autor, alvo e data.
 
 Superusuários ignoram as verificações de permissão. Para testar os perfis, use um usuário comum associado a um dos grupos.
 
@@ -237,7 +275,7 @@ pendente  →  rodando  →  sucesso
 2. **rodando**: o worker iniciou o script e registrou `iniciado_em`
 3. **sucesso** ou **falha**: o processo terminou; o Maestro grava `finalizado_em`, o status e o log
 
-Regras aplicadas no disparo:
+Regras aplicadas no disparo, em `robots/services.py`, valendo para o botão e para os agendamentos:
 
 - Só robôs com status **ativo** podem ser iniciados
 - Um robô não pode ter duas execuções em andamento (`pendente` ou `rodando`) ao mesmo tempo
@@ -266,6 +304,18 @@ Os scripts rodam com o Python do ambiente do Maestro. Robôs que dependem de bib
 
 ---
 
+## Agendamento
+
+Cada agendamento tem um robô, um horário e os dias da semana em que dispara. A cada minuto, o beat envia a tarefa `verificar_agendamentos`, que:
+
+1. Busca os agendamentos ativos com o horário do minuto atual e o dia de hoje marcado, no fuso de São Paulo
+2. Reivindica cada um com um `UPDATE` condicional em `ultimo_disparo`, o que garante que nenhum agendamento dispare duas vezes no mesmo minuto
+3. Dispara pela mesma função do botão "iniciar", registrando a origem e o agendamento na execução
+
+Recusas (robô em manutenção, execução em andamento) viram um aviso no log do worker, sem interromper os outros agendamentos. Um minuto em que o agendador estava parado não é recuperado depois, de propósito.
+
+---
+
 ## Modelo de dados
 
 ### Robo
@@ -285,16 +335,36 @@ Os scripts rodam com o Python do ambiente do Maestro. Robôs que dependem de bib
 |---|---|---|
 | `robo` | FK para Robo | `PROTECT` |
 | `status` | escolha | `pendente`, `rodando`, `sucesso`, `falha` |
-| `disparado_por` | FK para usuário | `SET_NULL`, opcional |
+| `origem` | escolha | `manual`, `agendamento` |
+| `agendamento` | FK para Agendamento | `SET_NULL`, opcional |
+| `disparado_por` | FK para usuário | `SET_NULL`, vazio em execuções agendadas |
 | `iniciado_em` | data e hora | preenchido pelo worker |
 | `finalizado_em` | data e hora | preenchido pelo worker |
 | `log` | texto | saída do script |
+
+### Agendamento
+
+| Campo | Tipo | Observação |
+|---|---|---|
+| `robo` | FK para Robo | `CASCADE` |
+| `horario` | hora | segundos zerados ao salvar |
+| `segunda` a `domingo` | sete campos booleanos | pelo menos um marcado |
+| `ativo` | booleano | pausar e retomar |
+| `ultimo_disparo` | data e hora | preenchido pela tarefa, trava contra disparo duplo |
+| `criado_por` | FK para usuário | `SET_NULL` |
+
+Um robô não pode ter dois agendamentos no mesmo horário (restrição de unicidade no banco).
+
+### ConfiguracaoSistema e RegistroAcesso
+
+`ConfiguracaoSistema` tem um único registro, com a retenção do histórico, e é onde as permissões de configuração são declaradas. `RegistroAcesso` guarda cada alteração de acesso (troca de grupo, desativação, reativação), com autor, alvo e data, e não pode ser editado pela interface.
 
 ### Decisões de integridade
 
 - **Robô com execuções não pode ser excluído** (`PROTECT`). O histórico é preservado; para aposentar um robô, altere o status para `inativo`.
 - **Usuário responsável por robôs não pode ser excluído** (`PROTECT`), para não perder a rastreabilidade de quem responde por cada robô.
-- **Excluir o usuário que disparou uma execução não apaga a execução** (`SET_NULL`). O registro continua, apenas sem a referência de quem disparou.
+- **Excluir o usuário que disparou uma execução não apaga a execução** (`SET_NULL`).
+- **Excluir um agendamento não apaga as execuções que ele disparou** (`SET_NULL`), e excluir um robô sem execuções leva junto os agendamentos dele (`CASCADE`).
 
 ---
 
@@ -307,11 +377,20 @@ uv run manage.py test
 | Classe | Cobre |
 |---|---|
 | `RoboModelTest` | criação, status padrão, exibição do status, regra `PROTECT` no responsável |
-| `RobotViewsTest` | acesso sem login, listagem, edição, exclusão com e sem execuções associadas |
+| `RobotViewsTest` | acesso sem login, listagem, edição, exclusão com e sem execuções, robô em manutenção, 403 sem `executar_robo` |
+| `DisparoTest` | regras do disparo e envio da tarefa só depois do commit |
 | `ExecucaoModelTest` | criação, status padrão, regras `PROTECT` e `SET_NULL` |
 | `ExecutionViewsTest` | acesso sem login, listagem, detalhe com log, 404 para execução inexistente |
+| `AgendamentoModelTest` | validação dos dias, segundos zerados, próxima ocorrência e seus casos de borda |
+| `VerificarAgendamentosTest` | disparo no minuto certo, trava contra disparo duplo, pausados, dias desmarcados e robô em manutenção |
+| `ScheduleViewsTest` | acesso, permissões, criação, pausa e exclusão mantendo o histórico |
+| `ConfiguracaoSistemaTest` | registro único da configuração |
+| `ConfigHomeTest` | acesso à aba, menu e visibilidade de cada seção por permissão |
+| `ServicosDeAcessoTest` | troca de grupo, desativação, travas contra alteração do próprio acesso e de superusuários, registro |
+| `ConfigUsersViewsTest` | tela de usuários, permissões, recusas como mensagem e ações só por POST |
+| `LogoutTest` | logout encerra a sessão e volta para a página inicial |
 
-Os testes não precisam do Redis nem do worker: o `TestCase` do Django não dispara callbacks de `transaction.on_commit`, então nenhuma task é enviada durante os testes.
+Os testes não precisam do Redis nem do worker: o `TestCase` do Django não dispara callbacks de `transaction.on_commit`, então nenhuma task é enviada durante os testes. Os testes do agendamento fixam o relógio com `mock.patch`, para não depender da hora em que rodam.
 
 ---
 
@@ -319,9 +398,11 @@ Os testes não precisam do Redis nem do worker: o `TestCase` do Django não disp
 
 - Segredos fora do código, lidos do `.env` (que não é versionado)
 - CSRF em todos os formulários
-- Ações que alteram dados (logout, excluir, iniciar, parar) aceitas apenas via POST
+- Ações que alteram dados (logout, excluir, iniciar, parar, pausar, alterar acesso) aceitas apenas via POST
 - Validadores de senha padrão do Django ativos
-- Permissões verificadas no backend, com resposta 403
+- Permissões verificadas no backend, com resposta 403, incluindo iniciar e parar robôs
+- Nenhum caminho pela interface altera `is_superuser`; ninguém altera o próprio acesso
+- Alterações de acesso registradas e não editáveis
 - Execução de scripts restrita a uma pasta aprovada, sem `shell=True` e com tempo limite
 - Log exibido com escape automático do Django (nunca com `|safe`)
 - Links externos com `rel="noopener noreferrer"`
@@ -332,35 +413,35 @@ Os testes não precisam do Redis nem do worker: o `TestCase` do Django não disp
 
 O acompanhamento diário é feito no [Trello do projeto](https://trello.com/b/B9qsNVe8/maestro-orquestrador-rpa).
 
-### Concluído
+### Versão 1.0 (lançada)
 
-- Estrutura do projeto, autenticação e identidade visual
-- Models `Robo` e `Execucao` com testes
-- CRUD de robôs com `ModelForm`
-- Histórico e detalhe de execuções
-- Testes das views
-- Grupos e permissões
-- Execução real via Celery + Redis
-- Painel com distribuição da frota, atividade e console de execuções
-- Página pública da ZV Labs
+Cadastro de robôs, execução em segundo plano, histórico com log, permissões e painel. Detalhes no [CHANGELOG](CHANGELOG.md).
 
-### Próxima fase: agente em Go
+### Pronto para a próxima versão
 
-1. Model `Agente` (nome, token, último sinal) e associação de cada robô a um agente
-2. Django Channels com autenticação do agente por token
-3. Agente Go mínimo: conexão e heartbeat, com status online no painel
-4. Comando de iniciar: o agente executa o robô e devolve o log
-5. Comando de parar: o agente encerra o processo de verdade
-6. Agendamento recorrente enviando comandos para o agente
+- Agendamento recorrente, com estados visuais e origem das execuções
+- Aba de configurações com gestão de usuários e registro de alterações
+- Permissão própria para iniciar e parar robôs, e grupos criados por migração
 
-Regras definidas para o agente desde o início: ele conecta no Maestro (nunca o contrário), cada agente tem o seu próprio token, e ele nunca recebe caminhos ou comandos crus, apenas o identificador do robô, resolvido dentro da pasta aprovada da própria máquina.
+### Em andamento: aba de configurações
+
+- Status do sistema (Redis, worker e agendador)
+- Retenção do histórico, com a limpeza automática pelo beat
+- Criação de usuários pela tela
+
+### Versão 1.1: robustez e tempo real
+
+- Tempo limite e número de tentativas configuráveis por robô
+- Botão "parar" que encerra o processo de verdade
+- Log ao vivo na tela de detalhe, com Django Channels
+- Alertas na tela quando um robô falha, estoura o tempo ou atrasa
+- Limites padrão de execução editáveis
 
 ### Depois
 
+- Clientes e ambientes (servidor da ZV Labs, instalações do cliente ou os dois)
+- Agente em Go para executar robôs em outras máquinas
 - API REST (DRF + JWT, com limite de requisições)
-- Paginação e filtros no histórico de execuções
-- Página de detalhe por robô, com taxa de sucesso e duração média
-- Observabilidade e auditoria (logging estruturado, histórico de alterações, cabeçalhos de segurança)
 
 ---
 
@@ -368,11 +449,10 @@ Regras definidas para o agente desde o início: ele conecta no Maestro (nunca o 
 
 | Item | Descrição | Prioridade |
 |---|---|---|
-| `DEBUG` | `os.getenv("DEBUG")` retorna texto, e qualquer texto não vazio é verdadeiro; na prática `DEBUG` fica sempre ativo | Alta |
-| `EMAIL_BACKEND` | a configuração de e-mail usa uma chave (`MAILERS`) que o Django não reconhece | Média |
-| Parar execução | `robot_stop` marca a execução como finalizada, mas o processo continua no worker; será resolvido pelo agente | Média |
+| Parar execução | `robot_stop` marca a execução como finalizada, mas o processo continua no worker; será resolvido pelo executor da 1.1 e pelo agente | Média |
+| Retenção sem limpeza | o valor de retenção já é guardado, mas a tarefa que apaga o histórico antigo ainda não existe | Média |
+| Criação de usuários | ainda feita pelo admin do Django | Baixa |
 | Estilos inline | as barras do painel usam `style` inline, o que vai conflitar com uma política de CSP rígida | Baixa |
-| Grupos via shell | os grupos são criados manualmente; o ideal é uma migração de dados | Baixa |
 
 ---
 
@@ -382,6 +462,7 @@ Regras definidas para o agente desde o início: ele conecta no Maestro (nunca o 
 - Templates com uma tag do Django por linha
 - `base.css` concentra variáveis de tema e componentes usados em mais de uma tela; cada tela tem o próprio CSS
 - Rotas referenciadas sempre pelo nome (`{% url 'home' %}`), nunca pelo caminho escrito à mão
+- Regras de negócio usadas por mais de um lugar moram em funções de serviço, sem conhecimento de HTTP
 - Nenhuma funcionalidade é considerada pronta sem revisão de permissão, CSRF e validação de entrada
 
 ---

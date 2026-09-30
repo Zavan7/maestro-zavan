@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Configurações — Maestro{% endblock %}
+
+{% block path %}~/maestro/configuracoes{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/config.css' %}" />
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>~/configuracoes</h1>
+</div>
+
+<div class="config-secoes">
+  {% if perms.config.gerenciar_usuarios %}
+  <section class="config-secao" id="usuarios">
+    <header class="config-secao-cabecalho">
+      <h2>usuários e acesso</h2>
+      <p>Quem entra no Maestro e o que cada pessoa pode fazer.</p>
+    </header>
+    <p class="config-valor">
+      <strong>{{ usuarios_ativos }}</strong> ativo{{ usuarios_ativos|pluralize }}
+      {% if usuarios_inativos %}
+      <span class="last-run-time">{{ usuarios_inativos }} desativado{{ usuarios_inativos|pluralize }}</span>
+      {% endif %}
+    </p>
+    <a href="{% url 'config_users' %}" class="btn config-acao">gerenciar usuários</a>
+  </section>
+  {% endif %}
+
+  {% if perms.config.ver_status_sistema %}
+  <section class="config-secao" id="status">
+    <header class="config-secao-cabecalho">
+      <h2>status do sistema</h2>
+      <p>Se a fila, o worker e o agendador estão funcionando.</p>
+    </header>
+    <p class="config-vazio">Em construção.</p>
+  </section>
+  {% endif %}
+
+  {% if perms.config.gerenciar_retencao %}
+  <section class="config-secao" id="retencao">
+    <header class="config-secao-cabecalho">
+      <h2>retenção do histórico</h2>
+      <p>Execuções e logs mais antigos que isso são apagados automaticamente.</p>
+    </header>
+    <p class="config-valor">
+      Hoje: <strong>{{ configuracao.retencao_dias }} dias</strong>
+    </p>
+  </section>
+  {% endif %}
+
+  {% if perms.config.gerenciar_limites %}
+  <section class="config-secao config-secao-futura" id="limites">
+    <header class="config-secao-cabecalho">
+      <h2>limites padrão de execução <em>em breve</em></h2>
+      <p>Valores usados quando o robô não define os próprios.</p>
+    </header>
+    <div class="config-campos">
+      <label class="field-label" for="timeout-padrao">tempo máximo por execução (segundos)</label>
+      <input id="timeout-padrao" type="number" value="{{ timeout_padrao }}" disabled />
+
+      <label class="field-label" for="limite-log">tamanho máximo do log (caracteres)</label>
+      <input id="limite-log" type="number" value="{{ limite_log }}" disabled />
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

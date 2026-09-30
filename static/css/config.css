@@ -1,0 +1,134 @@
+.config-secoes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.config-secao {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem 1.5rem;
+}
+
+.config-secao-cabecalho {
+  margin-bottom: 1rem;
+}
+
+.config-secao-cabecalho h2 {
+  font-size: 0.95rem;
+  font-weight: 500;
+  margin: 0 0 0.3rem;
+}
+
+.config-secao-cabecalho h2 em {
+  font-style: normal;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-left: 0.4rem;
+}
+
+.config-secao-cabecalho p,
+.config-vazio {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.config-valor {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.config-valor strong {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.config-campos {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.config-campos input {
+  margin-bottom: 0.8rem;
+}
+
+.config-secao-futura {
+  border-style: dashed;
+}
+
+.config-secao-futura input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.config-campos input[type="number"] {
+  appearance: textfield;
+}
+
+.config-campos input[type="number"]::-webkit-inner-spin-button,
+.config-campos input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.config-acao {
+  display: inline-block;
+  margin-top: 1rem;
+}
+
+.grupo-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.grupo-form select {
+  padding: 0.35rem 0.5rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.8rem;
+}
+
+.linha-inativa td {
+  color: var(--text-muted);
+}
+
+.tag-superusuario {
+  color: #e8983a;
+}
+
+.registro-acesso {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+
+.registro-acesso li {
+  display: grid;
+  grid-template-columns: 7rem 9rem minmax(0, 1fr) auto;
+  gap: 1rem;
+  padding: 0.55rem 1rem;
+}
+
+.registro-acesso li+li {
+  border-top: 1px solid var(--border);
+}
+
+.registro-acesso time,
+.registro-autor {
+  color: var(--text-muted);
+}
+
+.registro-acao {
+  color: var(--accent-text);
+}
