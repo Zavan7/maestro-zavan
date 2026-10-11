@@ -1,3 +1,8 @@
+"""Rotas do app de agendamentos.
+
+English:
+    Routes for the schedules app.
+"""
 from django.urls import path
 
 from scheduler import views
