@@ -15,12 +15,16 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 - Gestão de usuários e acesso: troca de grupo, desativação e reativação, com registro de todas as alterações
 - Grupo "Administrador do sistema"
 - Prévia da seção de limites padrão de execução, ainda sem edição
-- Testes do agendamento, do disparo de execuções e da aba de configurações
+- Status do sistema na aba de configurações: Redis, worker e agendador (pelo pulso gravado a cada minuto)
+- Edição da retenção do histórico e limpeza diária automática das execuções finalizadas mais antigas que o prazo
+- Criação de usuários pela aba de configurações, com grupo e registro na auditoria
+- Testes do agendamento, do disparo de execuções e da aba de configurações, incluindo status do sistema, retenção e criação de usuários
 
 ### Alterado
 
 - Iniciar e parar robôs passa a exigir a permissão `executar_robo`; antes bastava estar logado
 - Os grupos de acesso passam a ser criados por uma migração de dados, sem comandos manuais
+- Quem não está logado e abre uma página da aba de configurações vai para o login, em vez de receber 403
 
 ### Corrigido
 

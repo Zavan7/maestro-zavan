@@ -6,7 +6,7 @@ Primeiro produto da **ZV Labs**.
 
 > **Sobre o projeto:** o Maestro é desenvolvido como projeto de estudo, dentro de uma trilha de aprendizado em Python, RPA e desenvolvimento web. Apesar disso, é documentado, testado e versionado como um projeto real, e este README descreve o sistema e o seu andamento, não o conteúdo de estudo.
 
-**Versão atual:** 1.0.0, com o agendamento e a aba de configurações já prontos para a próxima versão. Veja o [CHANGELOG](CHANGELOG.md).
+**Versão atual:** 1.0.0, com o agendamento e a aba de configurações completa já prontos para a próxima versão. Veja o [CHANGELOG](CHANGELOG.md).
 
 ---
 
@@ -21,6 +21,7 @@ Primeiro produto da **ZV Labs**.
 - [Perfis e permissões](#perfis-e-permissões)
 - [Execução de robôs](#execução-de-robôs)
 - [Agendamento](#agendamento)
+- [Status do sistema e retenção](#status-do-sistema-e-retenção)
 - [Modelo de dados](#modelo-de-dados)
 - [Testes](#testes)
 - [Segurança](#segurança)
@@ -44,14 +45,13 @@ Primeiro produto da **ZV Labs**.
 - Histórico global de execuções, com a origem de cada uma (manual ou agendamento), e tela de detalhe com duração, log numerado e linhas de erro destacadas
 - Atualização automática da tela de detalhe enquanto a execução está em andamento
 - Controle de acesso por grupos (Operador, Administrador RPA e Administrador do sistema)
-- Aba de configurações com gestão de usuários: troca de grupo, desativação e reativação, com registro de todas as alterações
+- Aba de configurações com gestão de usuários: criação, troca de grupo, desativação e reativação, com registro de todas as alterações
+- Status do sistema na aba de configurações: Redis, worker e agendador
+- Retenção do histórico editável, com limpeza automática diária pelo beat
 - Mensagens de confirmação e de erro em todas as ações
 
 **Planejado**
 
-- Status do sistema na aba de configurações (Redis, worker e agendador)
-- Retenção do histórico com limpeza automática
-- Criação de usuários pela aba de configurações
 - Limites padrão de execução editáveis (hoje em prévia)
 - Agente em Go para executar robôs em outras máquinas, conectado ao Maestro por WebSocket
 - Parada real de execuções em andamento
@@ -76,7 +76,7 @@ flowchart LR
 
 Quando um robô é iniciado, pelo botão ou por um agendamento, o disparo passa por uma única função, `disparar_execucao`, que aplica as regras, cria uma `Execucao` com status `pendente` e envia uma task para o Redis. O worker do Celery pega a task, executa o script do robô e grava o status final e o log no banco.
 
-A cada minuto, o beat do Celery envia a tarefa que verifica os agendamentos vencidos e os dispara pelo mesmo caminho.
+A cada minuto, o beat do Celery envia a tarefa que verifica os agendamentos vencidos e os dispara pelo mesmo caminho, e a tarefa que grava o pulso usado pelo status do sistema. Uma vez por dia, às 03:17, envia a limpeza do histórico.
 
 Na próxima fase, a execução passa para um **agente escrito em Go**, instalado na máquina onde os robôs vivem. O agente abre uma conexão WebSocket com o Maestro, recebe os comandos de iniciar e parar, executa o robô no ambiente dele e devolve status e log. O Django continua sendo o ponto central de cadastro, permissões e histórico; o robô continua sendo Python.
 
@@ -115,8 +115,11 @@ maestro-zavan/
 │   └── views.py
 ├── config/              # aba de configurações, permissões e gestão de acesso
 │   ├── migrations/      # inclui a migração de dados que cria os grupos
+│   ├── forms.py         # retenção e criação de usuário
 │   ├── models.py
-│   ├── services.py      # regras de alteração de acesso
+│   ├── services.py      # regras de acesso, criação de usuário e limpeza do histórico
+│   ├── status.py        # verificações de Redis, worker e agendador
+│   ├── tasks.py         # pulso do agendador e limpeza diária
 │   └── views.py
 ├── maestro/             # configurações, URLs e app Celery
 │   ├── celery.py
@@ -229,7 +232,9 @@ Acesse `http://localhost:8000/`.
 | `/agendamentos/<id>/alternar/` | `scheduler.change_agendamento` (POST) | Pausar ou retomar |
 | `/agendamentos/<id>/excluir/` | `scheduler.delete_agendamento` | Exclusão com confirmação |
 | `/configuracoes/` | Alguma permissão do app `config` | Aba de configurações |
+| `/configuracoes/retencao/` | `config.gerenciar_retencao` (POST) | Salva a retenção do histórico |
 | `/configuracoes/usuarios/` | `config.gerenciar_usuarios` | Usuários e acesso |
+| `/configuracoes/usuarios/novo/` | `config.gerenciar_usuarios` | Criação de usuário |
 | `/configuracoes/usuarios/<id>/grupo/` | `config.gerenciar_usuarios` (POST) | Troca de grupo |
 | `/configuracoes/usuarios/<id>/alternar/` | `config.gerenciar_usuarios` (POST) | Desativar ou reativar |
 | `/admin/` | Superusuário | Admin do Django |
@@ -256,7 +261,7 @@ Permissões próprias do projeto, além das que o Django cria para cada model:
 
 Os grupos são definidos em `config/migrations/0002_grupos_de_acesso.py` e criados pelo `migrate`. As permissões são verificadas nas views: um usuário autenticado sem permissão recebe **403**, e não um redirecionamento para o login. Os botões correspondentes também são ocultados na interface, mas a proteção real é a da view.
 
-Na gestão de usuários, ninguém altera o próprio acesso, e superusuários só podem ser alterados por outro superusuário. Usuários são desativados, nunca excluídos, e cada alteração de acesso fica registrada com autor, alvo e data.
+Na gestão de usuários, ninguém altera o próprio acesso, e superusuários só podem ser alterados por outro superusuário. Usuários criados pela tela são sempre comuns (nunca superusuário nem equipe). Usuários são desativados, nunca excluídos, e cada alteração de acesso, inclusive a criação, fica registrada com autor, alvo e data.
 
 Superusuários ignoram as verificações de permissão. Para testar os perfis, use um usuário comum associado a um dos grupos.
 
@@ -316,6 +321,26 @@ Recusas (robô em manutenção, execução em andamento) viram um aviso no log d
 
 ---
 
+## Status do sistema e retenção
+
+### Status do sistema
+
+A seção mostra três verificações, feitas quando a página abre (só para quem tem `config.ver_status_sistema`):
+
+| Item | Como é verificado |
+|---|---|
+| Fila (Redis) | `PING` no Redis do `CELERY_BROKER_URL`, com tempo limite de 1 segundo |
+| Worker | `inspect().ping()` do Celery; mostra quantos workers responderam |
+| Agendador | o beat envia a cada minuto a tarefa `registrar_pulso_agendador`, que grava a hora no Redis com validade de 180 segundos; sem a chave, ou com ela velha, o agendador está parado |
+
+O beat não responde a `ping`, por isso o pulso. Como a tarefa do pulso roda no worker, um agendador "parado" também pode significar worker parado; o item do worker ajuda a separar os dois casos. Se o Redis não responde, worker e agendador aparecem como parados sem nova tentativa, para a página não esperar o tempo limite de cada um.
+
+### Retenção do histórico
+
+O prazo (entre 7 e 3650 dias, padrão 90) é editado na própria aba. Todo dia às 03:17 o beat envia `limpar_historico_antigo`, que apaga as execuções com status `sucesso` ou `falha` finalizadas antes do prazo, junto com o log. Execuções `pendente` ou `rodando` nunca são apagadas.
+
+---
+
 ## Modelo de dados
 
 ### Robo
@@ -357,7 +382,7 @@ Um robô não pode ter dois agendamentos no mesmo horário (restrição de unici
 
 ### ConfiguracaoSistema e RegistroAcesso
 
-`ConfiguracaoSistema` tem um único registro, com a retenção do histórico, e é onde as permissões de configuração são declaradas. `RegistroAcesso` guarda cada alteração de acesso (troca de grupo, desativação, reativação), com autor, alvo e data, e não pode ser editado pela interface.
+`ConfiguracaoSistema` tem um único registro, com a retenção do histórico, e é onde as permissões de configuração são declaradas. `RegistroAcesso` guarda cada alteração de acesso (criação, troca de grupo, desativação, reativação), com autor, alvo e data, e não pode ser editado pela interface.
 
 ### Decisões de integridade
 
@@ -388,9 +413,12 @@ uv run manage.py test
 | `ConfigHomeTest` | acesso à aba, menu e visibilidade de cada seção por permissão |
 | `ServicosDeAcessoTest` | troca de grupo, desativação, travas contra alteração do próprio acesso e de superusuários, registro |
 | `ConfigUsersViewsTest` | tela de usuários, permissões, recusas como mensagem e ações só por POST |
+| `StatusDoSistemaTest` | Redis respondendo e fora do ar, worker, pulso do agendador recente, ausente e velho |
+| `RetencaoTest` | limpeza só das finalizadas antigas, nunca das em andamento, tarefa do beat, edição pela tela, valor inválido, 403 e GET |
+| `CriarUsuarioTest` | criação com e sem grupo, senha em hash, nunca superusuário, registro, senhas diferentes, usuário repetido, 302 e 403 |
 | `LogoutTest` | logout encerra a sessão e volta para a página inicial |
 
-Os testes não precisam do Redis nem do worker: o `TestCase` do Django não dispara callbacks de `transaction.on_commit`, então nenhuma task é enviada durante os testes. Os testes do agendamento fixam o relógio com `mock.patch`, para não depender da hora em que rodam.
+Os testes não precisam do Redis nem do worker: o `TestCase` do Django não dispara callbacks de `transaction.on_commit`, então nenhuma task é enviada durante os testes. Os testes do agendamento fixam o relógio com `mock.patch`, para não depender da hora em que rodam. Os do status do sistema usam um Redis falso em memória, e as telas da aba trocam as verificações reais por um status fixo.
 
 ---
 
@@ -420,14 +448,8 @@ Cadastro de robôs, execução em segundo plano, histórico com log, permissões
 ### Pronto para a próxima versão
 
 - Agendamento recorrente, com estados visuais e origem das execuções
-- Aba de configurações com gestão de usuários e registro de alterações
+- Aba de configurações: gestão e criação de usuários com registro de alterações, status do sistema e retenção do histórico com limpeza automática
 - Permissão própria para iniciar e parar robôs, e grupos criados por migração
-
-### Em andamento: aba de configurações
-
-- Status do sistema (Redis, worker e agendador)
-- Retenção do histórico, com a limpeza automática pelo beat
-- Criação de usuários pela tela
 
 ### Versão 1.1: robustez e tempo real
 
@@ -450,8 +472,6 @@ Cadastro de robôs, execução em segundo plano, histórico com log, permissões
 | Item | Descrição | Prioridade |
 |---|---|---|
 | Parar execução | `robot_stop` marca a execução como finalizada, mas o processo continua no worker; será resolvido pelo executor da 1.1 e pelo agente | Média |
-| Retenção sem limpeza | o valor de retenção já é guardado, mas a tarefa que apaga o histórico antigo ainda não existe | Média |
-| Criação de usuários | ainda feita pelo admin do Django | Baixa |
 | Estilos inline | as barras do painel usam `style` inline, o que vai conflitar com uma política de CSP rígida | Baixa |
 
 ---

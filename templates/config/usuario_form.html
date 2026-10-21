@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Novo usuário — Maestro{% endblock %}
+
+{% block path %}~/maestro/configuracoes/usuarios/novo{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/config.css' %}" />
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>~/configuracoes/usuarios/novo</h1>
+  <a href="{% url 'config_users' %}" class="link-btn">voltar para usuários</a>
+</div>
+
+<form method="post" class="form-card">
+  {% csrf_token %}
+
+  {% if form.non_field_errors %}
+  <p class="error-message">{{ form.non_field_errors.0 }}</p>
+  {% endif %}
+
+  {% for campo in form %}
+  <label class="field-label" for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+  {{ campo }}
+  {% if campo.errors %}
+  <p class="error-message">{{ campo.errors.0 }}</p>
+  {% endif %}
+  {% endfor %}
+
+  <p class="config-vazio">Usuários criados aqui nunca são superusuários. O grupo pode ser trocado depois na lista.</p>
+
+  <button type="submit" class="btn">criar usuário</button>
+</form>
+{% endblock %}

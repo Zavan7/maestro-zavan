@@ -3,6 +3,9 @@
 English:
     Models for the settings app.
 """
+
+from typing import Any, Self
+
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
@@ -61,7 +64,7 @@ class ConfiguracaoSistema(models.Model):
             ),
         ]
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Retorna um nome fixo, já que só existe um registro.
 
         English:
@@ -69,7 +72,7 @@ class ConfiguracaoSistema(models.Model):
         """
         return "Configuração do sistema"
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: Any, **kwargs: Any) -> None:
         """Salva sempre com ``pk=1``, mantendo um registro só.
 
         Mesmo criando uma instância nova, o ``pk`` forçado faz o Django
@@ -85,7 +88,7 @@ class ConfiguracaoSistema(models.Model):
         super().save(*args, **kwargs)
 
     @classmethod
-    def atual(cls):
+    def atual(cls) -> Self:
         """Retorna a configuração, criando-a com os valores padrão se faltar.
 
         ``get_or_create`` devolve uma tupla ``(objeto, criado)``; o ``_``
@@ -110,19 +113,19 @@ class ConfiguracaoSistema(models.Model):
 class RegistroAcesso(models.Model):
     """Registro de auditoria das alterações de acesso.
 
-    Toda troca de grupo, desativação ou reativação feita pela aba de
-    usuários gera uma linha aqui, dizendo quem fez (``autor``), com quem
+    Toda criação, troca de grupo, desativação ou reativação feita pela aba
+    de usuários gera uma linha aqui, dizendo quem fez (``autor``), com quem
     (``alvo``) e o que mudou (``detalhe``). Os dois usam ``SET_NULL`` para
     que o registro sobreviva mesmo se um dos usuários for excluído.
 
     English:
         Audit log of access changes.
 
-        Every group change, deactivation or reactivation made through the
-        users tab creates a row here, saying who did it (``autor``), to
-        whom (``alvo``) and what changed (``detalhe``). Both use
-        ``SET_NULL`` so the record survives even if one of the users is
-        deleted.
+        Every creation, group change, deactivation or reactivation made
+        through the users tab creates a row here, saying who did it
+        (``autor``), to whom (``alvo``) and what changed (``detalhe``).
+        Both use ``SET_NULL`` so the record survives even if one of the
+        users is deleted.
     """
 
     class Acao(models.TextChoices):
@@ -132,6 +135,7 @@ class RegistroAcesso(models.Model):
             Kind of change recorded.
         """
 
+        CRIACAO = "criacao", "Criação"
         GRUPO = "grupo", "Troca de grupo"
         DESATIVACAO = "desativacao", "Desativação"
         REATIVACAO = "reativacao", "Reativação"
@@ -162,7 +166,7 @@ class RegistroAcesso(models.Model):
         ordering = ["-criado_em"]
         default_permissions = ()
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Retorna a ação e o detalhe, por exemplo ``Desativação: analista``.
 
         English:

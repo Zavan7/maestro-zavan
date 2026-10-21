@@ -9,7 +9,10 @@ Pontos que valem entender:
   do ``settings.py`` só as variáveis que começam com ``CELERY_``.
 - ``autodiscover_tasks`` procura um ``tasks.py`` em cada app instalado.
 - ``beat_schedule`` é a agenda do ``celery beat``: aqui ele chama
-  ``verificar_agendamentos`` uma vez por minuto (``crontab(minute="*")``).
+  ``verificar_agendamentos`` uma vez por minuto (``crontab(minute="*")``),
+  grava o pulso que o status do sistema usa para saber se o agendador
+  está vivo e, uma vez por dia às 03:17, apaga o histórico mais antigo
+  que a retenção configurada.
 
 English:
     Maestro's Celery application and periodic task schedule.
@@ -27,8 +30,11 @@ English:
       app.
     - ``beat_schedule`` is the ``celery beat`` schedule: here it calls
       ``verificar_agendamentos`` once a minute
-      (``crontab(minute="*")``).
+      (``crontab(minute="*")``), writes the pulse the system status uses
+      to know the scheduler is alive and, once a day at 03:17, deletes
+      history older than the configured retention.
 """
+
 import os
 
 from celery import Celery
@@ -43,5 +49,13 @@ app.conf.beat_schedule = {
     "verificar-agendamentos": {
         "task": "scheduler.tasks.verificar_agendamentos",
         "schedule": crontab(minute="*"),
+    },
+    "registrar-pulso-agendador": {
+        "task": "config.tasks.registrar_pulso_agendador",
+        "schedule": crontab(minute="*"),
+    },
+    "limpar-historico-antigo": {
+        "task": "config.tasks.limpar_historico_antigo",
+        "schedule": crontab(hour=3, minute=17),
     },
 }

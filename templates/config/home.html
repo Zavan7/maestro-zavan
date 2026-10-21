@@ -28,6 +28,7 @@
       {% endif %}
     </p>
     <a href="{% url 'config_users' %}" class="btn config-acao">gerenciar usuários</a>
+    <a href="{% url 'config_user_create' %}" class="link-btn config-acao">novo usuário</a>
   </section>
   {% endif %}
 
@@ -37,7 +38,19 @@
       <h2>status do sistema</h2>
       <p>Se a fila, o worker e o agendador estão funcionando.</p>
     </header>
-    <p class="config-vazio">Em construção.</p>
+    <ul class="status-sistema">
+      {% for item in status_sistema %}
+      <li>
+        <span>{{ item.nome }}</span>
+        {% if item.ok %}
+        <span class="estado estado-ok">{{ item.detalhe }}</span>
+        {% else %}
+        <span class="estado estado-falha">{{ item.detalhe }}</span>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    <a href="{% url 'config_home' %}#status" class="link-btn config-acao">verificar de novo</a>
   </section>
   {% endif %}
 
@@ -47,9 +60,18 @@
       <h2>retenção do histórico</h2>
       <p>Execuções e logs mais antigos que isso são apagados automaticamente.</p>
     </header>
-    <p class="config-valor">
-      Hoje: <strong>{{ configuracao.retencao_dias }} dias</strong>
-    </p>
+    <form method="post" action="{% url 'config_retention' %}" class="config-campos">
+      {% csrf_token %}
+      <label class="field-label" for="{{ form_retencao.retencao_dias.id_for_label }}">{{ form_retencao.retencao_dias.label }}</label>
+      {{ form_retencao.retencao_dias }}
+      {% if form_retencao.retencao_dias.errors %}
+      <p class="error-message">{{ form_retencao.retencao_dias.errors.0 }}</p>
+      {% endif %}
+      <p class="config-vazio">
+        A limpeza roda todo dia às 03:17 e apaga execuções finalizadas antes de {{ limite_retencao|date:"d/m/Y" }}.
+      </p>
+      <button type="submit" class="btn config-acao">salvar</button>
+    </form>
   </section>
   {% endif %}
 

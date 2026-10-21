@@ -3,14 +3,54 @@
 English:
     Tests for the settings app: model, services and views.
 """
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group, Permission
+
+from datetime import datetime, timedelta
+from unittest import mock
+
+import redis
+from django.contrib.auth.models import Group, Permission, User
 from django.test import Client, TestCase
+from django.utils import timezone
 
 from config.models import ConfiguracaoSistema, RegistroAcesso
-from config.services import AlteracaoRecusada, alternar_ativo, trocar_grupo
+from config.services import (
+    AlteracaoRecusada,
+    alternar_ativo,
+    limpar_historico,
+    trocar_grupo,
+)
+from config.status import (
+    CHAVE_PULSO_AGENDADOR,
+    VALIDADE_PULSO_SEGUNDOS,
+    ItemStatus,
+    registrar_pulso,
+    status_do_sistema,
+    verificar_agendador,
+    verificar_redis,
+    verificar_worker,
+)
+from config.tasks import limpar_historico_antigo
+from executions.models import Execucao
+from robots.models import Robo
 
-User = get_user_model()
+AGORA = timezone.make_aware(datetime(2026, 10, 21, 12, 0))
+STATUS_FALSO = [ItemStatus("fila (Redis)", True, "respondendo")]
+
+
+def patch_status_do_sistema():
+    """Troca as verificações reais por um status fixo, sem Redis.
+
+    Sem isso, abrir a aba nos testes tentaria conectar no Redis local.
+
+    English:
+        Replaces the real checks with a fixed status, without Redis.
+
+        Without it, opening the tab in tests would try to connect to the
+        local Redis.
+    """
+    return mock.patch(
+        "config.views.status_do_sistema", return_value=STATUS_FALSO
+    )
 
 
 class ConfiguracaoSistemaTest(TestCase):
@@ -60,6 +100,9 @@ class ConfigHomeTest(TestCase):
             username="operador", password="senha123"
         )
         self.operador.groups.add(Group.objects.get(name="Operador"))
+        patcher = patch_status_do_sistema()
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def test_redireciona_se_deslogado(self):
         """Quem não está logado é redirecionado (302) para o login.
@@ -374,3 +417,472 @@ class ConfigUsersViewsTest(TestCase):
 
         self.alvo.refresh_from_db()
         self.assertTrue(self.alvo.is_active)
+
+
+class FakeRedis:
+    """Redis falso em memória, só com o que o status do sistema usa.
+
+    English:
+        In-memory fake Redis, with only what the system status uses.
+    """
+
+    def __init__(self, fora_do_ar=False):
+        """Cria o Redis falso, opcionalmente fora do ar.
+
+        English:
+            Creates the fake Redis, optionally down.
+        """
+        self.fora_do_ar = fora_do_ar
+        self.dados = {}
+        self.validades = {}
+
+    def _conferir(self):
+        """Levanta erro de conexão se o Redis falso estiver fora do ar.
+
+        English:
+            Raises a connection error if the fake Redis is down.
+        """
+        if self.fora_do_ar:
+            raise redis.ConnectionError("fora do ar")
+
+    def ping(self):
+        """Responde ao ping.
+
+        English:
+            Answers the ping.
+        """
+        self._conferir()
+        return True
+
+    def get(self, name):
+        """Lê uma chave em bytes, como o Redis real.
+
+        English:
+            Reads a key as bytes, like the real Redis.
+        """
+        self._conferir()
+        valor = self.dados.get(name)
+        return valor.encode() if valor is not None else None
+
+    def set(self, name, value, ex=None):
+        """Grava uma chave e guarda a validade.
+
+        English:
+            Writes a key and stores its expiry.
+        """
+        self._conferir()
+        self.dados[name] = value
+        self.validades[name] = ex
+
+
+class StatusDoSistemaTest(TestCase):
+    """Testes das verificações de Redis, worker e agendador.
+
+    English:
+        Tests for the Redis, worker and scheduler checks.
+    """
+
+    def test_redis_respondendo(self):
+        """Redis que responde ao ping aparece como ok.
+
+        English:
+            A Redis that answers ping shows as ok.
+        """
+        self.assertTrue(verificar_redis(FakeRedis()).ok)
+
+    def test_redis_fora_do_ar(self):
+        """Redis fora do ar aparece como falha, sem levantar exceção.
+
+        English:
+            A Redis that is down shows as failed, without raising.
+        """
+        status = verificar_redis(FakeRedis(fora_do_ar=True))
+
+        self.assertFalse(status.ok)
+        self.assertEqual(status.detalhe, "sem resposta")
+
+    def test_pulso_recente_indica_agendador_vivo(self):
+        """Um pulso gravado há pouco indica o agendador funcionando.
+
+        English:
+            A recently written pulse means the scheduler is working.
+        """
+        cliente = FakeRedis()
+        registrar_pulso(cliente, agora=AGORA - timedelta(seconds=40))
+
+        status = verificar_agendador(cliente, agora=AGORA)
+
+        self.assertTrue(status.ok)
+        self.assertEqual(status.detalhe, "último sinal há 40s")
+
+    def test_pulso_grava_com_validade(self):
+        """O pulso é gravado com validade, para sumir se o agendador parar.
+
+        English:
+            The pulse is written with an expiry, so it vanishes if the
+            scheduler stops.
+        """
+        cliente = FakeRedis()
+        registrar_pulso(cliente, agora=AGORA)
+
+        self.assertEqual(
+            cliente.validades[CHAVE_PULSO_AGENDADOR], VALIDADE_PULSO_SEGUNDOS
+        )
+
+    def test_sem_pulso_indica_agendador_parado(self):
+        """Sem pulso no Redis, o agendador aparece como parado.
+
+        English:
+            With no pulse in Redis, the scheduler shows as stopped.
+        """
+        status = verificar_agendador(FakeRedis(), agora=AGORA)
+
+        self.assertFalse(status.ok)
+        self.assertEqual(status.detalhe, "nenhum sinal recente")
+
+    def test_pulso_velho_indica_agendador_parado(self):
+        """Um pulso mais velho que a validade indica o agendador parado.
+
+        English:
+            A pulse older than the expiry means the scheduler is stopped.
+        """
+        cliente = FakeRedis()
+        registrar_pulso(cliente, agora=AGORA - timedelta(minutes=10))
+
+        self.assertFalse(verificar_agendador(cliente, agora=AGORA).ok)
+
+    def test_worker_respondendo(self):
+        """Com um worker respondendo ao ping, o worker aparece como ok.
+
+        English:
+            With one worker answering ping, the worker shows as ok.
+        """
+        with mock.patch("config.status.app.control.inspect") as inspect:
+            inspect.return_value.ping.return_value = {
+                "celery@maquina": {"ok": "pong"}
+            }
+            status = verificar_worker()
+
+        self.assertTrue(status.ok)
+        self.assertEqual(status.detalhe, "1 ativo")
+
+    def test_nenhum_worker(self):
+        """Sem resposta de nenhum worker, o worker aparece como parado.
+
+        English:
+            With no worker answering, the worker shows as stopped.
+        """
+        with mock.patch("config.status.app.control.inspect") as inspect:
+            inspect.return_value.ping.return_value = None
+            status = verificar_worker()
+
+        self.assertFalse(status.ok)
+
+    def test_redis_fora_nao_tenta_worker_nem_agendador(self):
+        """Com o Redis fora, worker e agendador falham sem nova tentativa.
+
+        English:
+            With Redis down, worker and scheduler fail without another
+            attempt.
+        """
+        with (
+            mock.patch(
+                "config.status.conectar_redis",
+                return_value=FakeRedis(fora_do_ar=True),
+            ),
+            mock.patch("config.status.verificar_worker") as worker,
+        ):
+            itens = status_do_sistema()
+
+        worker.assert_not_called()
+        self.assertEqual([item.ok for item in itens], [False, False, False])
+
+
+class RetencaoTest(TestCase):
+    """Testes da limpeza do histórico e da edição da retenção.
+
+    English:
+        Tests for history cleanup and retention editing.
+    """
+
+    def setUp(self):
+        """Cria um robô, um administrador do sistema e um operador.
+
+        English:
+            Creates a robot, a system administrator and an operator.
+        """
+        self.admin = User.objects.create_user(
+            username="admin_sistema", password="senha123"
+        )
+        self.admin.groups.add(
+            Group.objects.get(name="Administrador do sistema")
+        )
+        self.operador = User.objects.create_user(
+            username="operador", password="senha123"
+        )
+        self.operador.groups.add(Group.objects.get(name="Operador"))
+        self.robo = Robo.objects.create(
+            nome="coleta-notas",
+            caminho_script="robo_exemplo.py",
+            responsavel=self.admin,
+        )
+        configuracao = ConfiguracaoSistema.atual()
+        configuracao.retencao_dias = 30
+        configuracao.save()
+
+    def _execucao(self, status, dias_atras):
+        """Cria uma execução finalizada há ``dias_atras`` dias.
+
+        English:
+            Creates an execution finished ``dias_atras`` days ago.
+        """
+        return Execucao.objects.create(
+            robo=self.robo,
+            status=status,
+            finalizado_em=AGORA - timedelta(days=dias_atras),
+        )
+
+    def test_apaga_so_finalizadas_mais_antigas_que_a_retencao(self):
+        """Só execuções finalizadas antes do limite são apagadas.
+
+        English:
+            Only executions finished before the limit are deleted.
+        """
+        antiga_ok = self._execucao(Execucao.Status.SUCESSO, 31)
+        antiga_falha = self._execucao(Execucao.Status.FALHA, 90)
+        recente = self._execucao(Execucao.Status.SUCESSO, 29)
+
+        apagadas = limpar_historico(agora=AGORA)
+
+        self.assertEqual(apagadas, 2)
+        restantes = set(Execucao.objects.values_list("pk", flat=True))
+        self.assertEqual(restantes, {recente.pk})
+        self.assertNotIn(antiga_ok.pk, restantes)
+        self.assertNotIn(antiga_falha.pk, restantes)
+
+    def test_nunca_apaga_pendente_ou_rodando(self):
+        """Execuções em andamento ficam, por mais antigas que sejam.
+
+        English:
+            Executions in progress stay, however old they are.
+        """
+        self._execucao(Execucao.Status.PENDENTE, 365)
+        self._execucao(Execucao.Status.RODANDO, 365)
+        Execucao.objects.create(robo=self.robo)
+
+        self.assertEqual(limpar_historico(agora=AGORA), 0)
+        self.assertEqual(Execucao.objects.count(), 3)
+
+    def test_tarefa_devolve_a_quantidade_apagada(self):
+        """A tarefa do beat chama a limpeza e devolve quantas apagou.
+
+        English:
+            The beat task runs the cleanup and returns how many it deleted.
+        """
+        self._execucao(Execucao.Status.SUCESSO, 400)
+
+        self.assertEqual(limpar_historico_antigo(), 1)
+
+    def test_salvar_retencao_pela_tela(self):
+        """Um valor válido é salvo e confirmado com mensagem.
+
+        English:
+            A valid value is saved and confirmed with a message.
+        """
+        self.client.login(username="admin_sistema", password="senha123")
+
+        with patch_status_do_sistema():
+            response = self.client.post(
+                "/configuracoes/retencao/",
+                {"retencao_dias": 60},
+                follow=True,
+            )
+
+        self.assertEqual(ConfiguracaoSistema.atual().retencao_dias, 60)
+        self.assertContains(response, "Retenção salva: 60 dias.")
+
+    def test_valor_fora_do_limite_mostra_erro(self):
+        """Um valor abaixo do mínimo não é salvo e a aba mostra o erro.
+
+        English:
+            A value below the minimum is not saved and the tab shows the
+            error.
+        """
+        self.client.login(username="admin_sistema", password="senha123")
+
+        with patch_status_do_sistema():
+            response = self.client.post(
+                "/configuracoes/retencao/", {"retencao_dias": 1}
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ConfiguracaoSistema.atual().retencao_dias, 30)
+        self.assertContains(response, "Retenção não salva")
+
+    def test_operador_recebe_403(self):
+        """Sem gerenciar_retencao, salvar a retenção responde 403.
+
+        English:
+            Without gerenciar_retencao, saving the retention answers 403.
+        """
+        self.client.login(username="operador", password="senha123")
+
+        response = self.client.post(
+            "/configuracoes/retencao/", {"retencao_dias": 60}
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(ConfiguracaoSistema.atual().retencao_dias, 30)
+
+    def test_get_nao_altera_nada(self):
+        """Um GET só volta para a aba, sem alterar a retenção.
+
+        English:
+            A GET just goes back to the tab, without changing retention.
+        """
+        self.client.login(username="admin_sistema", password="senha123")
+
+        response = self.client.get(
+            "/configuracoes/retencao/", {"retencao_dias": 60}
+        )
+
+        self.assertRedirects(
+            response, "/configuracoes/", fetch_redirect_response=False
+        )
+        self.assertEqual(ConfiguracaoSistema.atual().retencao_dias, 30)
+
+
+class CriarUsuarioTest(TestCase):
+    """Testes da criação de usuários pela aba de configurações.
+
+    English:
+        Tests for creating users through the settings tab.
+    """
+
+    URL = "/configuracoes/usuarios/novo/"
+
+    def setUp(self):
+        """Cria um administrador do sistema e já faz login com ele.
+
+        English:
+            Creates a system administrator and logs in as them.
+        """
+        self.admin = User.objects.create_user(
+            username="admin_sistema", password="senha123"
+        )
+        self.admin.groups.add(
+            Group.objects.get(name="Administrador do sistema")
+        )
+        self.operador = Group.objects.get(name="Operador")
+        self.client.login(username="admin_sistema", password="senha123")
+
+    def _dados(self, **extras):
+        """Monta um POST válido, com a possibilidade de trocar campos.
+
+        English:
+            Builds a valid POST, allowing fields to be overridden.
+        """
+        dados = {
+            "username": "analista",
+            "first_name": "Ana",
+            "last_name": "Lima",
+            "email": "ana@exemplo.com",
+            "password1": "Maestro#2026x",
+            "password2": "Maestro#2026x",
+            "grupo": self.operador.pk,
+        }
+        dados.update(extras)
+        return dados
+
+    def test_formulario_abre(self):
+        """O formulário de novo usuário abre para quem tem a permissão.
+
+        English:
+            The new user form opens for users with the permission.
+        """
+        response = self.client.get(self.URL)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "criar usuário")
+
+    def test_cria_com_grupo_e_registra(self):
+        """O usuário é criado com o grupo, a senha em hash e o registro.
+
+        English:
+            The user is created with the group, a hashed password and the
+            record.
+        """
+        response = self.client.post(self.URL, self._dados(), follow=True)
+
+        novo = User.objects.get(username="analista")
+        self.assertEqual(list(novo.groups.all()), [self.operador])
+        self.assertTrue(novo.check_password("Maestro#2026x"))
+        self.assertFalse(novo.is_superuser)
+        self.assertFalse(novo.is_staff)
+        registro = RegistroAcesso.objects.get()
+        self.assertEqual(registro.acao, RegistroAcesso.Acao.CRIACAO)
+        self.assertEqual(registro.autor, self.admin)
+        self.assertEqual(registro.detalhe, "analista (Operador)")
+        self.assertContains(response, "Usuário &#x27;analista&#x27; criado.")
+
+    def test_cria_sem_grupo(self):
+        """Deixar o grupo vazio cria o usuário sem grupo.
+
+        English:
+            Leaving the group empty creates the user without a group.
+        """
+        self.client.post(self.URL, self._dados(grupo=""))
+
+        novo = User.objects.get(username="analista")
+        self.assertFalse(novo.groups.exists())
+
+    def test_senhas_diferentes_nao_criam(self):
+        """Com as senhas diferentes, nada é criado e o erro aparece.
+
+        English:
+            With mismatched passwords, nothing is created and the error
+            shows.
+        """
+        response = self.client.post(
+            self.URL, self._dados(password2="outra-senha-123")
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(User.objects.filter(username="analista").exists())
+        self.assertFalse(RegistroAcesso.objects.exists())
+
+    def test_usuario_repetido_nao_cria(self):
+        """Um nome de usuário já usado é recusado pelo formulário.
+
+        English:
+            A username already in use is refused by the form.
+        """
+        self.client.post(self.URL, self._dados(username="admin_sistema"))
+
+        self.assertEqual(
+            User.objects.filter(username="admin_sistema").count(), 1
+        )
+
+    def test_operador_recebe_403(self):
+        """Sem gerenciar_usuarios, a página responde 403.
+
+        English:
+            Without gerenciar_usuarios, the page answers 403.
+        """
+        operador = User.objects.create_user(
+            username="operador", password="senha123"
+        )
+        operador.groups.add(self.operador)
+        self.client.login(username="operador", password="senha123")
+
+        self.assertEqual(self.client.get(self.URL).status_code, 403)
+
+    def test_deslogado_vai_para_o_login(self):
+        """Quem não está logado é redirecionado para o login.
+
+        English:
+            Anyone not logged in is redirected to the login page.
+        """
+        self.client.logout()
+
+        self.assertEqual(self.client.get(self.URL).status_code, 302)

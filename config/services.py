@@ -1,4 +1,4 @@
-"""Serviços de gestão de acesso, com travas de segurança e auditoria.
+"""Serviços da aba de configurações: gestão de acesso e retenção.
 
 As regras ficam aqui, longe das views, para valerem em qualquer lugar
 que altere acesso. As funções que alteram dados usam
@@ -6,16 +6,25 @@ que altere acesso. As funções que alteram dados usam
 gravados juntos, ou nada é gravado.
 
 English:
-    Access management services, with safety checks and auditing.
+    Settings tab services: access management and retention.
 
     The rules live here, away from the views, so they apply anywhere
     access is changed. Functions that change data use
     ``@transaction.atomic``: either the change and its audit record are
     saved together, or nothing is saved.
 """
-from django.db import transaction
 
-from config.models import RegistroAcesso
+from datetime import datetime, timedelta
+
+from django.contrib.auth.models import Group, User
+from django.db import transaction
+from django.utils import timezone
+
+from config.forms import NovoUsuarioForm
+from config.models import ConfiguracaoSistema, RegistroAcesso
+from executions.models import Execucao
+
+STATUS_FINALIZADOS = [Execucao.Status.SUCESSO, Execucao.Status.FALHA]
 
 
 class AlteracaoRecusada(Exception):
@@ -30,7 +39,7 @@ class AlteracaoRecusada(Exception):
     """
 
 
-def _verificar_se_pode_alterar(autor, alvo):
+def _verificar_se_pode_alterar(autor: User, alvo: User) -> None:
     """Aplica as travas da gestão de acesso.
 
     As duas travas evitam acidentes graves:
@@ -72,12 +81,16 @@ def _verificar_se_pode_alterar(autor, alvo):
         )
 
 
-def pode_alterar(autor, alvo):
+def pode_alterar(autor: User, alvo: User) -> bool:
     """Indica se ``autor`` pode alterar o acesso de ``alvo``.
 
     Usa as mesmas travas de ``_verificar_se_pode_alterar``, mas devolve um
     booleano em vez de levantar exceção. Serve para o template decidir se
     mostra os botões, sem repetir as regras.
+
+    Args:
+        autor: usuário que quer fazer a alteração.
+        alvo: usuário que seria alterado.
 
     Returns:
         ``True`` se a alteração é permitida; ``False`` caso contrário.
@@ -88,6 +101,10 @@ def pode_alterar(autor, alvo):
         It uses the same safeguards as ``_verificar_se_pode_alterar``, but
         returns a boolean instead of raising. It lets the template decide
         whether to show the buttons, without repeating the rules.
+
+        Args:
+            autor: user who wants to make the change.
+            alvo: user who would be changed.
 
         Returns:
             ``True`` if the change is allowed; ``False`` otherwise.
@@ -100,7 +117,7 @@ def pode_alterar(autor, alvo):
 
 
 @transaction.atomic
-def trocar_grupo(autor, alvo, grupo):
+def trocar_grupo(autor: User, alvo: User, grupo: Group | None) -> None:
     """Substitui o grupo do usuário e registra a troca na auditoria.
 
     No Maestro cada usuário tem no máximo um grupo, por isso usamos
@@ -154,7 +171,7 @@ def trocar_grupo(autor, alvo, grupo):
 
 
 @transaction.atomic
-def alternar_ativo(autor, alvo):
+def alternar_ativo(autor: User, alvo: User) -> None:
     """Desativa um usuário ativo ou reativa um desativado.
 
     Desativar (``is_active = False``) é melhor do que excluir: o usuário
@@ -197,3 +214,111 @@ def alternar_ativo(autor, alvo):
         ),
         detalhe=alvo.username,
     )
+
+
+@transaction.atomic
+def criar_usuario(autor: User, form: NovoUsuarioForm) -> User:
+    """Cria o usuário do formulário, com o grupo escolhido, e registra.
+
+    O formulário já validou os dados e cuida da senha (``set_password``
+    gravando só o hash). Aqui ficam o grupo e a auditoria, dentro da mesma
+    transação: se o registro falhar, o usuário também não é criado.
+
+    Nada aqui toca ``is_superuser`` ou ``is_staff``: quem nasce pela tela
+    é sempre um usuário comum.
+
+    Args:
+        autor: usuário que está criando a conta.
+        form: ``NovoUsuarioForm`` já validado (``is_valid()`` verdadeiro).
+
+    Returns:
+        O usuário criado.
+
+    English:
+        Creates the user from the form, with the chosen group, and logs it.
+
+        The form already validated the data and handles the password
+        (``set_password`` storing only the hash). The group and the audit
+        record live here, in the same transaction: if the record fails, the
+        user is not created either.
+
+        Nothing here touches ``is_superuser`` or ``is_staff``: anyone
+        created through the page is always a regular user.
+
+        Args:
+            autor: user creating the account.
+            form: a validated ``NovoUsuarioForm`` (``is_valid()`` is true).
+
+        Returns:
+            The created user.
+    """
+    usuario = form.save()
+    grupo = form.cleaned_data["grupo"]
+    if grupo:
+        usuario.groups.set([grupo])
+
+    RegistroAcesso.objects.create(
+        autor=autor,
+        alvo=usuario,
+        acao=RegistroAcesso.Acao.CRIACAO,
+        detalhe=f"{usuario.username} ({grupo.name if grupo else 'sem grupo'})",
+    )
+    return usuario
+
+
+def limite_da_retencao(agora: datetime | None = None) -> datetime:
+    """Calcula a data antes da qual o histórico pode ser apagado.
+
+    Args:
+        agora: momento de referência; ``None`` usa a hora atual.
+
+    Returns:
+        ``agora`` menos os dias de retenção configurados.
+
+    English:
+        Computes the date before which history may be deleted.
+
+        Args:
+            agora: reference moment; ``None`` uses the current time.
+
+        Returns:
+            ``agora`` minus the configured retention days.
+    """
+    agora = agora or timezone.now()
+    dias = ConfiguracaoSistema.atual().retencao_dias
+    return agora - timedelta(days=dias)
+
+
+def limpar_historico(agora: datetime | None = None) -> int:
+    """Apaga as execuções finalizadas há mais tempo que a retenção.
+
+    Só entram execuções com ``sucesso`` ou ``falha`` e ``finalizado_em``
+    antes do limite. Execuções ``pendente`` ou ``rodando`` nunca são
+    apagadas, por mais antigas que sejam: ainda podem estar em uso pelo
+    worker. O log mora no próprio registro, então vai junto.
+
+    Args:
+        agora: momento de referência; ``None`` usa a hora atual.
+
+    Returns:
+        Quantidade de execuções apagadas.
+
+    English:
+        Deletes executions finished longer ago than the retention period.
+
+        Only executions with ``sucesso`` or ``falha`` and ``finalizado_em``
+        before the limit are included. ``pendente`` or ``rodando``
+        executions are never deleted, however old: the worker may still be
+        using them. The log lives in the record itself, so it goes too.
+
+        Args:
+            agora: reference moment; ``None`` uses the current time.
+
+        Returns:
+            Number of deleted executions.
+    """
+    _, apagados_por_model = Execucao.objects.filter(
+        status__in=STATUS_FINALIZADOS,
+        finalizado_em__lt=limite_da_retencao(agora),
+    ).delete()
+    return apagados_por_model.get("executions.Execucao", 0)
