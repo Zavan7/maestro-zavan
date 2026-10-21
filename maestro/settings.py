@@ -286,13 +286,25 @@ CELERY_TIMEZONE = TIME_ZONE
 # Nos testes, a camada em memória dispensa o Redis.
 ASGI_APPLICATION = "maestro.asgi.application"
 CHANNELS_REDIS_URL = os.getenv("CHANNELS_REDIS_URL", "redis://localhost:6379/1")
+# O redis-py 8 passou a usar 5 s de tempo limite de leitura por padrão, e
+# o channels_redis espera por mensagens com BZPOPMIN de até 5 s: a leitura
+# estourava no limite e derrubava as conexões com "Timeout reading from".
+# O tempo limite da leitura precisa ser maior que essa espera.
+CHANNELS_REDIS_SOCKET_TIMEOUT = 30
 CHANNEL_LAYERS = {
     "default": (
         {"BACKEND": "channels.layers.InMemoryChannelLayer"}
         if EXECUTANDO_TESTES
         else {
             "BACKEND": "channels_redis.core.RedisChannelLayer",
-            "CONFIG": {"hosts": [CHANNELS_REDIS_URL]},
+            "CONFIG": {
+                "hosts": [
+                    {
+                        "address": CHANNELS_REDIS_URL,
+                        "socket_timeout": CHANNELS_REDIS_SOCKET_TIMEOUT,
+                    }
+                ]
+            },
         }
     )
 }
