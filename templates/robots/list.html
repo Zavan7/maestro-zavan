@@ -33,6 +33,9 @@
           <summary>{{ robo.nome }}</summary>
           <p class="robo-description">{{ robo.descricao|default:"Sem descrição." }}</p>
         </details>
+        {% if robo.agente %}
+        <span class="last-run-time">agente {{ robo.agente.nome }}</span>
+        {% endif %}
       </td>
       <td>
         <span class="status-badge status-{{ robo.status }}">{{ robo.get_status_display }}</span>

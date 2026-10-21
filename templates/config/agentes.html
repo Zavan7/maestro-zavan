@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Agentes — Maestro{% endblock %}
+
+{% block path %}~/maestro/configuracoes/agentes{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/config.css' %}" />
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>~/configuracoes/agentes</h1>
+  <a href="{% url 'config_home' %}" class="link-btn">voltar para configurações</a>
+</div>
+
+<p class="config-vazio config-intro">
+  Um agente é a máquina onde robôs rodam fora do worker do Maestro. Ele se conecta pelo WebSocket com o próprio token, recebe os comandos de iniciar e parar e devolve o log. O token só aparece uma vez, ao criar o agente ou gerar um novo.
+</p>
+
+<table class="robots-table">
+  <thead>
+    <tr>
+      <th>Agente</th>
+      <th>Situação</th>
+      <th>Último sinal</th>
+      <th>Robôs</th>
+      <th>Ações</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for linha in linhas %}
+    <tr class="{% if not linha.agente.ativo %}linha-inativa{% endif %}">
+      <td>{{ linha.agente.nome }}</td>
+      <td><span class="estado estado-{{ linha.estado }}">{{ linha.texto_estado }}</span></td>
+      <td>
+        {% if linha.agente.ultimo_sinal %}
+        {{ linha.agente.ultimo_sinal|timesince }} atrás
+        {% else %}
+        nunca conectou
+        {% endif %}
+      </td>
+      <td>{{ linha.total_robos }}</td>
+      <td>
+        <form method="post" action="{% url 'agent_new_token' linha.agente.pk %}" class="inline-form">
+          {% csrf_token %}
+          <button type="submit" class="link-btn">gerar novo token</button>
+        </form>
+        <form method="post" action="{% url 'agent_toggle' linha.agente.pk %}" class="inline-form">
+          {% csrf_token %}
+          {% if linha.agente.ativo %}
+          <button type="submit" class="link-btn link-btn-stop">desativar</button>
+          {% else %}
+          <button type="submit" class="link-btn link-btn-start">reativar</button>
+          {% endif %}
+        </form>
+      </td>
+    </tr>
+    {% empty %}
+    <tr>
+      <td colspan="5" class="config-vazio">Nenhum agente cadastrado. Todos os robôs rodam no worker do Maestro.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2 class="section-title">novo agente</h2>
+<form method="post" action="{% url 'agent_create' %}" class="form-card">
+  {% csrf_token %}
+  <label class="field-label" for="{{ form.nome.id_for_label }}">{{ form.nome.label }}</label>
+  {{ form.nome }}
+  {% if form.nome.errors %}
+  <p class="error-message">{{ form.nome.errors.0 }}</p>
+  {% endif %}
+  <button type="submit" class="btn">criar agente</button>
+</form>
+{% endblock %}

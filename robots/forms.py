@@ -4,8 +4,12 @@ English:
     Forms for the robots app.
 """
 
-from django import forms
+from typing import Any
 
+from django import forms
+from django.db.models import Q
+
+from agents.models import Agente
 from robots.models import Robo
 
 
@@ -48,6 +52,7 @@ class RoboForm(forms.ModelForm):
             "timeout_segundos",
             "max_tentativas",
             "duracao_esperada_segundos",
+            "agente",
         ]
         labels = {
             "nome": "nome",
@@ -57,5 +62,29 @@ class RoboForm(forms.ModelForm):
             "timeout_segundos": "tempo máximo (segundos)",
             "max_tentativas": "novas tentativas após falha",
             "duracao_esperada_segundos": "duração esperada (segundos)",
+            "agente": "agente",
         }
         widgets = {"descricao": forms.Textarea(attrs={"rows": 3})}
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Monta o formulário oferecendo só agentes ativos.
+
+        Um robô que já aponta para um agente desativado continua vendo
+        esse agente na lista, para a edição não trocar de máquina sem
+        querer.
+
+        English:
+            Builds the form offering only active agents.
+
+            A robot already pointing to a deactivated agent still sees
+            that agent in the list, so editing does not switch machines by
+            accident.
+        """
+        super().__init__(*args, **kwargs)
+        campo = self.fields["agente"]
+        assert isinstance(campo, forms.ModelChoiceField)
+        atual = self.instance.agente_id if self.instance.pk else None
+        campo.queryset = Agente.objects.filter(
+            Q(ativo=True) | Q(pk=atual)
+        ).order_by("nome")
+        campo.empty_label = "nenhum (worker do Maestro)"

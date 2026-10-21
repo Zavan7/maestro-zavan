@@ -595,7 +595,10 @@ class StatusDoSistemaTest(TestCase):
             itens = status_do_sistema()
 
         worker.assert_not_called()
-        self.assertEqual([item.ok for item in itens], [False, False, False])
+        self.assertEqual(
+            [item.nome for item in itens if not item.ok],
+            ["fila (Redis)", "worker", "agendador"],
+        )
 
 
 class RetencaoTest(TestCase):

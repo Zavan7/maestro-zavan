@@ -173,6 +173,7 @@ INSTALLED_APPS = [
     "robots",
     "scheduler",
     "config",
+    "agents",
 ]
 
 MIDDLEWARE = [
@@ -272,12 +273,8 @@ EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 
 # Celery e execução de robôs
-CELERY_BROKER_URL = os.getenv(
-    "CELERY_BROKER_URL", "redis://localhost:6379/0"
-)
-ROBOS_SCRIPTS_DIR = Path(
-    os.getenv("ROBOS_SCRIPTS_DIR", BASE_DIR / "scripts")
-)
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
+ROBOS_SCRIPTS_DIR = Path(os.getenv("ROBOS_SCRIPTS_DIR", BASE_DIR / "scripts"))
 CELERY_TIMEZONE = TIME_ZONE
 
 
@@ -285,7 +282,9 @@ CELERY_TIMEZONE = TIME_ZONE
 # O Redis do Channels usa o banco 1, separado da fila do Celery (banco 0).
 # Nos testes, a camada em memória dispensa o Redis.
 ASGI_APPLICATION = "maestro.asgi.application"
-CHANNELS_REDIS_URL = os.getenv("CHANNELS_REDIS_URL", "redis://localhost:6379/1")
+CHANNELS_REDIS_URL = os.getenv(
+    "CHANNELS_REDIS_URL", "redis://localhost:6379/1"
+)
 # O redis-py 8 passou a usar 5 s de tempo limite de leitura por padrão, e
 # o channels_redis espera por mensagens com BZPOPMIN de até 5 s: a leitura
 # estourava no limite e derrubava as conexões com "Timeout reading from".

@@ -14,6 +14,7 @@ English:
     button in the template is just cosmetics; the real protection is in
     the view.
 """
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db.models import Prefetch, ProtectedError
@@ -22,6 +23,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from accounts.tipos import RequisicaoAutenticada
+from agents.comandos import mandar_parar
 from executions.ao_vivo import publicar_fim
 from executions.models import Execucao
 from robots.forms import RoboForm
@@ -130,14 +132,16 @@ def robot_list(request):
             The rendered ``robots/list.html`` page.
     """
     robos = list(
-        Robo.objects.prefetch_related(
+        Robo.objects.select_related("agente")
+        .prefetch_related(
             Prefetch(
                 "execucoes",
                 queryset=Execucao.objects.order_by("-id"),
                 to_attr="execucoes_recentes",
             ),
             "agendamentos",
-        ).order_by("nome")
+        )
+        .order_by("nome")
     )
 
     agora = timezone.localtime()
@@ -351,17 +355,48 @@ def robot_start(request, pk):
     return redirect("robot_list")
 
 
+def _cancelar(execucao: Execucao, motivo: str) -> None:
+    """Encerra a execução como cancelada, no registro, e avisa a tela.
+
+    Usado quando não há processo para parar: a execução ainda estava na
+    fila, ou o agente que a rodava saiu do ar.
+
+    Args:
+        execucao: execução pendente ou rodando.
+        motivo: frase que vai para o log, explicando o cancelamento.
+
+    English:
+        Ends the execution as cancelled, in the record, and notifies the
+        page.
+
+        Used when there is no process to stop: the execution was still
+        queued, or the agent running it went offline.
+
+        Args:
+            execucao: pending or running execution.
+            motivo: sentence that goes into the log, explaining why.
+    """
+    execucao.status = Execucao.Status.CANCELADA
+    execucao.finalizado_em = timezone.now()
+    execucao.log = "\n".join(filter(None, [execucao.log, motivo]))
+    execucao.save(update_fields=["status", "finalizado_em", "log"])
+    publicar_fim(execucao.pk, execucao.status)
+
+
 @permission_required("robots.executar_robo", raise_exception=True)
 def robot_stop(request: RequisicaoAutenticada, pk: int) -> HttpResponse:
     """Para a execução em andamento do robô.
 
     - Execução ``PENDENTE`` (ainda na fila, por exemplo com o worker
-      parado) é cancelada na hora. Como a tarefa só roda o script se a
-      execução ainda estiver pendente, o worker não a executa depois.
-    - Execução ``RODANDO`` recebe ``parada_solicitada``. O executor
-      confere esse campo a cada segundo e encerra o processo; quem marca
-      ``CANCELADA`` é a tarefa, quando o processo de fato terminou. Por
-      isso a mensagem diz "parada solicitada", e não "parada".
+      parado) é cancelada na hora. Como o worker e o agente só rodam o
+      script se a execução ainda estiver pendente, ela não roda depois.
+    - Execução ``RODANDO`` recebe ``parada_solicitada``. No worker, o
+      executor confere esse campo a cada segundo; num agente, o comando
+      ``parar`` vai junto. Quem marca ``CANCELADA`` é quem roda o robô,
+      quando o processo de fato terminou; por isso a mensagem diz
+      "parada solicitada", e não "parada".
+    - Execução ``RODANDO`` num agente que está offline é cancelada na
+      hora: não há quem receba o pedido, e o robô ficaria travado.
 
     O ``update()`` grava só o campo do pedido, sem sobrescrever o que o
     worker estiver gravando na mesma execução.
@@ -378,14 +413,17 @@ def robot_stop(request: RequisicaoAutenticada, pk: int) -> HttpResponse:
         Stops the robot's execution in progress.
 
         - A ``PENDENTE`` execution (still queued, e.g. with the worker
-          down) is cancelled right away. Since the task only runs the
-          script if the execution is still pending, the worker does not
-          run it later.
-        - A ``RODANDO`` execution gets ``parada_solicitada``. The executor
-          checks that field every second and stops the process; the task
-          is the one that sets ``CANCELADA``, once the process has really
-          ended. That is why the message says "stop requested", not
-          "stopped".
+          down) is cancelled right away. Since the worker and the agent
+          only run the script if the execution is still pending, it does
+          not run later.
+        - A ``RODANDO`` execution gets ``parada_solicitada``. In the
+          worker, the executor checks that field every second; on an
+          agent, the ``parar`` command goes along. Whoever runs the robot
+          sets ``CANCELADA``, once the process has really ended; that is
+          why the message says "stop requested", not "stopped".
+        - A ``RODANDO`` execution on an agent that is offline is cancelled
+          right away: nobody would get the request, and the robot would be
+          stuck.
 
         ``update()`` writes only the request field, without overwriting
         what the worker may be saving on the same execution.
@@ -398,10 +436,50 @@ def robot_stop(request: RequisicaoAutenticada, pk: int) -> HttpResponse:
         Returns:
             Always redirects to the robot list.
     """
-    robo = get_object_or_404(Robo, pk=pk)
+    robo = get_object_or_404(Robo.objects.select_related("agente"), pk=pk)
 
     if request.method != "POST":
         return redirect("robot_list")
+
+    execucao = robo.execucoes.filter(
+        status__in=[Execucao.Status.PENDENTE, Execucao.Status.RODANDO]
+    ).last()
+    agente = robo.agente
+    if execucao is None:
+        messages.error(
+            request, f"'{robo.nome}' não tem execução em andamento."
+        )
+        return redirect("robot_list")
+
+    if agente is not None:
+        mandar_parar(agente.pk, execucao.pk)
+
+    if execucao.status == Execucao.Status.PENDENTE:
+        _cancelar(
+            execucao,
+            f"Cancelada antes de iniciar por {request.user.username}.",
+        )
+        messages.success(
+            request, f"Execução pendente de '{robo.nome}' cancelada."
+        )
+    elif agente is not None and not agente.online():
+        _cancelar(
+            execucao,
+            f"Cancelada por {request.user.username}: o agente "
+            f"'{agente.nome}' está offline.",
+        )
+        messages.success(
+            request,
+            f"Execução de '{robo.nome}' cancelada: o agente está offline.",
+        )
+    else:
+        Execucao.objects.filter(pk=execucao.pk).update(parada_solicitada=True)
+        messages.success(
+            request,
+            f"Parada de '{robo.nome}' solicitada; o robô para em instantes.",
+        )
+
+    return redirect("robot_list")
 
     execucao = robo.execucoes.filter(
         status__in=[Execucao.Status.PENDENTE, Execucao.Status.RODANDO]
@@ -422,9 +500,7 @@ def robot_stop(request: RequisicaoAutenticada, pk: int) -> HttpResponse:
             request, f"Execução pendente de '{robo.nome}' cancelada."
         )
     else:
-        Execucao.objects.filter(pk=execucao.pk).update(
-            parada_solicitada=True
-        )
+        Execucao.objects.filter(pk=execucao.pk).update(parada_solicitada=True)
         messages.success(
             request,
             f"Parada de '{robo.nome}' solicitada; o robô para em instantes.",

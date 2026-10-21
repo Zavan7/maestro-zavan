@@ -17,6 +17,8 @@ English:
 from django.contrib.auth.models import User
 from django.db import transaction
 
+from agents.comandos import mandar_iniciar
+from config.models import ConfiguracaoSistema
 from executions.models import Execucao
 from robots.models import Robo
 from robots.tasks import executar_robo
@@ -46,19 +48,23 @@ def disparar_execucao(
     agendamento: Agendamento | None = None,
     tentativa: int = 1,
 ) -> Execucao:
-    """Cria uma execução pendente e envia a tarefa ao Celery após o commit.
+    """Cria uma execução pendente e a envia ao worker ou ao agente.
 
     Passo a passo:
 
     1. Recusa robôs que não estão ativos.
-    2. Recusa se já existe execução pendente ou rodando, para o mesmo
+    2. Recusa robôs de um agente que está offline: a execução ficaria
+       pendente sem ninguém para rodá-la.
+    3. Recusa se já existe execução pendente ou rodando, para o mesmo
        robô não rodar duas vezes ao mesmo tempo.
-    3. Cria a ``Execucao`` com status ``PENDENTE``.
-    4. Agenda o envio da tarefa com ``transaction.on_commit``.
+    4. Cria a ``Execucao`` com status ``PENDENTE``.
+    5. Com ``transaction.on_commit``, envia a tarefa ao Celery ou, se o
+       robô tem agente, o comando ``iniciar`` ao agente.
 
-    Por que ``on_commit``? Se a tarefa fosse enviada na hora, o worker
-    poderia procurar a execução antes de a transação ser gravada no banco
-    e não encontrá-la. Com ``on_commit``, ela só sai depois do commit.
+    Por que ``on_commit``? Se o envio fosse na hora, o worker (ou o
+    agente) poderia procurar a execução antes de a transação ser gravada
+    no banco e não encontrá-la. Com ``on_commit``, ele só sai depois do
+    commit.
 
     Args:
         robo: robô a ser executado.
@@ -73,24 +79,28 @@ def disparar_execucao(
         A ``Execucao`` criada, com status ``PENDENTE``.
 
     Raises:
-        DisparoRecusado: se o robô não está ativo ou já tem uma execução
-            pendente ou rodando.
+        DisparoRecusado: se o robô não está ativo, se o agente dele está
+            offline ou se já tem uma execução pendente ou rodando.
 
     English:
-        Creates a pending execution and sends the Celery task after commit.
+        Creates a pending execution and sends it to the worker or agent.
 
         Step by step:
 
         1. Refuses robots that are not active.
-        2. Refuses if there is already a pending or running execution, so
+        2. Refuses robots whose agent is offline: the execution would stay
+           pending with nobody to run it.
+        3. Refuses if there is already a pending or running execution, so
            the same robot never runs twice at once.
-        3. Creates the ``Execucao`` with ``PENDENTE`` status.
-        4. Schedules sending the task with ``transaction.on_commit``.
+        4. Creates the ``Execucao`` with ``PENDENTE`` status.
+        5. With ``transaction.on_commit``, sends the task to Celery or,
+           if the robot has an agent, the ``iniciar`` command to the
+           agent.
 
-        Why ``on_commit``? If the task were sent right away, the worker
-        could look up the execution before the transaction is saved to the
-        database and not find it. With ``on_commit``, it only goes out
-        after the commit.
+        Why ``on_commit``? If it were sent right away, the worker (or the
+        agent) could look up the execution before the transaction is saved
+        to the database and not find it. With ``on_commit``, it only goes
+        out after the commit.
 
         Args:
             robo: robot to run.
@@ -106,11 +116,16 @@ def disparar_execucao(
             The created ``Execucao``, with ``PENDENTE`` status.
 
         Raises:
-            DisparoRecusado: if the robot is not active or already has a
-                pending or running execution.
+            DisparoRecusado: if the robot is not active, if its agent is
+                offline or if it already has a pending or running
+                execution.
     """
     if robo.status != Robo.Status.ATIVO:
         raise DisparoRecusado(f"robô está {robo.get_status_display().lower()}")
+
+    agente = robo.agente
+    if agente is not None and not agente.online():
+        raise DisparoRecusado(f"o agente '{agente.nome}' está offline")
 
     em_andamento = robo.execucoes.filter(
         status__in=[Execucao.Status.PENDENTE, Execucao.Status.RODANDO]
@@ -126,5 +141,16 @@ def disparar_execucao(
         agendamento=agendamento,
         tentativa=tentativa,
     )
-    transaction.on_commit(lambda: executar_robo.delay(execucao.id))
+    if agente is None:
+        transaction.on_commit(lambda: executar_robo.delay(execucao.id))
+    else:
+        timeout = (
+            robo.timeout_segundos
+            or ConfiguracaoSistema.atual().timeout_padrao_segundos
+        )
+        transaction.on_commit(
+            lambda: mandar_iniciar(
+                agente.pk, execucao.pk, robo.caminho_script, timeout
+            )
+        )
     return execucao

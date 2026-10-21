@@ -32,6 +32,7 @@ from django.conf import settings
 from django.utils import timezone
 from kombu.exceptions import OperationalError
 
+from agents.models import Agente
 from maestro.celery import app
 
 CHAVE_PULSO_AGENDADOR = "maestro:agendador:pulso"
@@ -263,25 +264,52 @@ def registrar_pulso(
     )
 
 
+def verificar_agentes() -> ItemStatus:
+    """Conta quantos agentes ativos estão online.
+
+    Fica ok quando todos os agentes ativos estão online, ou quando não
+    há nenhum (todos os robôs rodam no worker).
+
+    Returns:
+        O status dos agentes.
+
+    English:
+        Counts how many active agents are online.
+
+        It is ok when every active agent is online, or when there is none
+        (all robots run in the worker).
+
+        Returns:
+            The agents status.
+    """
+    ativos = list(Agente.objects.filter(ativo=True))
+    if not ativos:
+        return ItemStatus("agentes", True, "nenhum cadastrado")
+    online = sum(agente.online() for agente in ativos)
+    return ItemStatus(
+        "agentes", online == len(ativos), f"{online} de {len(ativos)} online"
+    )
+
+
 def status_do_sistema() -> list[ItemStatus]:
-    """Verifica Redis, worker e agendador, nessa ordem.
+    """Verifica Redis, worker, agendador e agentes, nessa ordem.
 
     Worker e agendador dependem do Redis. Se ele não responde, os dois
     são marcados como parados sem nova tentativa, para a página não
     esperar o tempo limite de cada um.
 
     Returns:
-        Os três status, prontos para a tela.
+        Os quatro status, prontos para a tela.
 
     English:
-        Checks Redis, worker and scheduler, in that order.
+        Checks Redis, worker, scheduler and agents, in that order.
 
         Worker and scheduler depend on Redis. If it does not answer, both
         are marked as stopped without another attempt, so the page does
         not wait for each one's timeout.
 
         Returns:
-            The three statuses, ready for the page.
+            The four statuses, ready for the page.
     """
     cliente = conectar_redis()
     status_redis = verificar_redis(cliente)
@@ -290,5 +318,11 @@ def status_do_sistema() -> list[ItemStatus]:
             status_redis,
             ItemStatus("worker", False, "sem conexão com o Redis"),
             ItemStatus("agendador", False, "sem conexão com o Redis"),
+            verificar_agentes(),
         ]
-    return [status_redis, verificar_worker(), verificar_agendador(cliente)]
+    return [
+        status_redis,
+        verificar_worker(),
+        verificar_agendador(cliente),
+        verificar_agentes(),
+    ]

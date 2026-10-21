@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Token do agente — Maestro{% endblock %}
+
+{% block path %}~/maestro/configuracoes/agentes/{{ agente.nome }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/config.css' %}" />
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>~/configuracoes/agentes/{{ agente.nome }}</h1>
+  <a href="{% url 'agent_list' %}" class="link-btn">voltar para agentes</a>
+</div>
+
+<section class="config-secao token-agente">
+  <header class="config-secao-cabecalho">
+    <h2>token do agente '{{ agente.nome }}'</h2>
+    <p>Copie agora: ele não será mostrado de novo. Se perder, gere um novo; o anterior deixa de valer na hora.</p>
+  </header>
+
+  <span class="field-label">token</span>
+  <code class="token-valor">{{ token }}</code>
+
+  <span class="field-label">configuração do agente</span>
+  <pre class="token-config">MAESTRO_URL={{ endereco }}
+MAESTRO_TOKEN={{ token }}</pre>
+
+  <p class="config-vazio">O agente envia o token no cabeçalho <code>Authorization: Bearer &lt;token&gt;</code>. Em produção, use <code>wss://</code>.</p>
+</section>
+{% endblock %}

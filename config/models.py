@@ -72,6 +72,7 @@ class ConfiguracaoSistema(models.Model):
                 "gerenciar_limites",
                 "Pode alterar os limites padrão de execução",
             ),
+            ("gerenciar_agentes", "Pode cadastrar agentes e gerar tokens"),
         ]
 
     def __str__(self) -> str:
@@ -146,6 +147,7 @@ class RegistroAcesso(models.Model):
         """
 
         CRIACAO = "criacao", "Criação"
+        AGENTE = "agente", "Agente"
         GRUPO = "grupo", "Troca de grupo"
         DESATIVACAO = "desativacao", "Desativação"
         REATIVACAO = "reativacao", "Reativação"

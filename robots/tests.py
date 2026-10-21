@@ -624,7 +624,7 @@ class ExecutarRoboTaskTest(TestCase):
 
         with (
             mock.patch("robots.tasks.publicar_linhas") as linhas,
-            mock.patch("robots.tasks.publicar_fim") as fim,
+            mock.patch("robots.conclusao.publicar_fim") as fim,
         ):
             execucao = self._rodar()
 

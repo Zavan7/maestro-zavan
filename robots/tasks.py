@@ -21,7 +21,6 @@ English:
     new attempt.
 """
 
-import logging
 import sys
 import time
 from collections import deque
@@ -33,13 +32,12 @@ from django.conf import settings
 from django.utils import timezone
 
 from config.models import ConfiguracaoSistema
-from executions.ao_vivo import LinhaDoLog, publicar_fim, publicar_linhas
+from executions.ao_vivo import LinhaDoLog, publicar_linhas
 from executions.models import Execucao
+from robots.conclusao import desfecho, finalizar_execucao
 from robots.executor import Motivo, executar
 
 INTERVALO_DESPACHO_SEGUNDOS = 0.5
-
-logger = logging.getLogger(__name__)
 
 
 class LogLimitado:
@@ -319,8 +317,9 @@ def executar_robo(execucao_id: int) -> None:
        tempo esgotado, ``FALHA``; parada pedida, ``CANCELADA``. Caminho
        inválido ou script inexistente também viram ``FALHA``. Depois de
        gravar, avisa a tela que a execução terminou (``publicar_fim``).
-    5. Se falhou e o robô ainda tem tentativas, dispara a próxima
-       (``_tentar_de_novo``).
+    5. Se falhou e o robô ainda tem tentativas, dispara a próxima. As
+       regras dos passos 4 e 5 ficam em ``robots.conclusao``, as mesmas
+       para o worker e para o agente.
 
     Args:
         execucao_id: id da ``Execucao`` pendente a ser processada.
@@ -349,7 +348,8 @@ def executar_robo(execucao_id: int) -> None:
            saving, tells the page the execution has ended
            (``publicar_fim``).
         5. If it failed and the robot still has attempts left, triggers
-           the next one (``_tentar_de_novo``).
+           the next one. The rules of steps 4 and 5 live in
+           ``robots.conclusao``, the same for the worker and the agent.
 
         Args:
             execucao_id: id of the pending ``Execucao`` to process.
@@ -366,7 +366,6 @@ def executar_robo(execucao_id: int) -> None:
         execucao.robo.timeout_segundos or configuracao.timeout_padrao_segundos
     )
     log = LogAoVivo(execucao_id, configuracao.limite_log)
-    pode_repetir = True
 
     try:
         script = _resolver_script(execucao.robo.caminho_script)
@@ -378,35 +377,18 @@ def executar_robo(execucao_id: int) -> None:
             ao_receber_linha=log.adicionar,
             a_cada_volta=log.despachar,
         )
+        motivo, codigo_saida = resultado.motivo, resultado.codigo_saida
     except (ValueError, FileNotFoundError) as erro:
         log.adicionar(str(erro))
-        status = Execucao.Status.FALHA
-        pode_repetir = False
-    else:
-        if resultado.motivo is Motivo.PARADO:
-            log.adicionar("Execução parada pelo usuário.")
-            status = Execucao.Status.CANCELADA
-            pode_repetir = False
-        elif resultado.motivo is Motivo.TEMPO_ESGOTADO:
-            log.adicionar(f"Execução excedeu o limite de {timeout}s.")
-            status = Execucao.Status.FALHA
-        elif resultado.codigo_saida == 0:
-            status = Execucao.Status.SUCESSO
-        else:
-            status = Execucao.Status.FALHA
+        motivo, codigo_saida = Motivo.SCRIPT_INVALIDO, None
 
-    execucao.status = status
+    fim = desfecho(motivo, codigo_saida, timeout)
+    if fim.aviso:
+        log.adicionar(fim.aviso)
     log.encerrar()
     execucao.log = log.texto()
     execucao.total_linhas = log.total_linhas
-    execucao.finalizado_em = timezone.now()
-    execucao.save(
-        update_fields=["log", "total_linhas", "status", "finalizado_em"]
-    )
-    publicar_fim(execucao_id, status)
-
-    if status == Execucao.Status.FALHA and pode_repetir:
-        _tentar_de_novo(execucao)
+    finalizar_execucao(execucao, fim)
 
 
 def _parada_solicitada(execucao_id: int) -> bool:
@@ -430,53 +412,3 @@ def _parada_solicitada(execucao_id: int) -> bool:
     return Execucao.objects.filter(
         pk=execucao_id, parada_solicitada=True
     ).exists()
-
-
-def _tentar_de_novo(execucao: Execucao) -> None:
-    """Dispara a próxima tentativa, se o robô ainda tiver alguma.
-
-    ``max_tentativas`` conta as tentativas extras: com 2, um robô roda no
-    máximo 3 vezes. Cada tentativa é uma ``Execucao`` nova, com log e
-    duração próprios, disparada pelo mesmo serviço do botão; se ele
-    recusar (o robô foi para manutenção, por exemplo), só fica um aviso
-    no log do worker.
-
-    O import de ``robots.services`` fica dentro da função porque o
-    serviço importa este módulo para enviar a tarefa; no topo, os dois
-    módulos dependeriam um do outro ao carregar.
-
-    Args:
-        execucao: execução que acabou de falhar.
-
-    English:
-        Triggers the next attempt, if the robot has any left.
-
-        ``max_tentativas`` counts the extra attempts: with 2, a robot runs
-        at most 3 times. Each attempt is a new ``Execucao``, with its own
-        log and duration, triggered by the same service as the button; if
-        it refuses (the robot went into maintenance, for example), only a
-        warning is left in the worker log.
-
-        The ``robots.services`` import lives inside the function because
-        the service imports this module to send the task; at the top, the
-        two modules would depend on each other while loading.
-
-        Args:
-            execucao: execution that has just failed.
-    """
-    from robots.services import DisparoRecusado, disparar_execucao
-
-    if execucao.tentativa > execucao.robo.max_tentativas:
-        return
-    try:
-        disparar_execucao(
-            execucao.robo,
-            disparado_por=execucao.disparado_por,
-            origem=Execucao.Origem(execucao.origem),
-            agendamento=execucao.agendamento,
-            tentativa=execucao.tentativa + 1,
-        )
-    except DisparoRecusado as erro:
-        logger.warning(
-            "Nova tentativa de %s não disparou: %s", execucao.robo, erro
-        )

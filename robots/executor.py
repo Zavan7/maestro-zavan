@@ -56,15 +56,26 @@ ESPERA_ENCERRAMENTO_SEGUNDOS = 5.0
 
 
 class Motivo(Enum):
-    """Por que o processo terminou.
+    """Por que a execução terminou.
+
+    Os valores em texto são os mesmos que o agente em Go envia na
+    mensagem ``fim``. ``SCRIPT_INVALIDO`` nunca sai do executor: é quando
+    o robô nem chegou a rodar (script inexistente ou fora da pasta
+    aprovada), detectado antes de chamá-lo.
 
     English:
-        Why the process ended.
+        Why the execution ended.
+
+        The text values are the same ones the Go agent sends in the
+        ``fim`` message. ``SCRIPT_INVALIDO`` never comes out of the
+        executor: it is when the robot did not even run (missing script or
+        outside the approved folder), detected before calling it.
     """
 
     CONCLUIDO = "concluido"
     TEMPO_ESGOTADO = "tempo_esgotado"
     PARADO = "parado"
+    SCRIPT_INVALIDO = "script_invalido"
 
 
 @dataclass(frozen=True, slots=True)
