@@ -174,3 +174,5 @@ cython_debug/
 maestro-codigo-referencia.md
 maestro-roteiro-proximos-passos.md
 celerybeat-schedule*
+# Redis local
+dump.rdb
