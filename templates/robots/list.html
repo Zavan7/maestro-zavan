@@ -11,81 +11,98 @@
 
 {% block content %}
 <div class="page-header">
-  <h1>~/robots</h1>
+  <div>
+    <h1>~/robots</h1>
+    <p class="page-subtitle">{{ robos|length }} robô{{ robos|length|pluralize }} cadastrado{{ robos|length|pluralize }}</p>
+  </div>
+  {% if perms.robots.add_robo %}
+  <a href="{% url 'robot_create' %}" class="btn">+ novo robô</a>
+  {% endif %}
 </div>
 
-<table class="robots-table">
-  <thead>
-    <tr>
-      <th>Nome</th>
-      <th>Status</th>
-      <th>Agora</th>
-      <th>Próxima execução</th>
-      <th>Última execução</th>
-      <th>Ações</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for robo in robos %}
-    <tr>
-      <td>
-        <details class="robo-details">
-          <summary>{{ robo.nome }}</summary>
-          <p class="robo-description">{{ robo.descricao|default:"Sem descrição." }}</p>
-        </details>
-        {% if robo.agente %}
-        <span class="last-run-time">agente {{ robo.agente.nome }}</span>
-        {% endif %}
-      </td>
-      <td>
-        <span class="status-badge status-{{ robo.status }}">{{ robo.get_status_display }}</span>
-      </td>
-      <td>
-        <span class="estado estado-{{ robo.estado_agora }}">{{ robo.texto_agora }}</span>
-      </td>
-      <td>
-        <span class="estado estado-{{ robo.estado_agenda }}">{{ robo.texto_agenda }}</span>
-        {% if robo.agenda_bloqueada %}
-        <span class="last-run-time">será recusado: robô {{ robo.get_status_display|lower }}</span>
-        {% endif %}
-      </td>
-      <td>
-        {% if robo.ultima_execucao %}
-        <span class="status-badge status-{{ robo.ultima_execucao.status }}">{{ robo.ultima_execucao.get_status_display }}</span>
-        {% if robo.ultima_execucao.iniciado_em %}
-        <span class="last-run-time">{{ robo.ultima_execucao.iniciado_em|timesince }} atrás</span>
-        {% endif %}
-        {% else %}
-        <span class="estado estado-manual">nunca executado</span>
-        {% endif %}
-      </td>
-      <td>
-        {% if perms.robots.change_robo %}
-        <a href="{% url 'robot_edit' robo.id %}" class="link-btn">editar</a>
-        {% endif %}
-        {% if perms.robots.delete_robo %}
-        <a href="{% url 'robot_exclusion' robo.id %}" class="link-btn">excluir</a>
-        {% endif %}
-        {% if perms.robots.executar_robo %}
-        {% if robo.estado_agora == "rodando" %}
-        <form method="post" action="{% url 'robot_stop' robo.id %}" class="inline-form">
-          {% csrf_token %}
-          <button type="submit" class="link-btn link-btn-stop">parar</button>
-        </form>
-        {% elif robo.status == "ativo" %}
-        <form method="post" action="{% url 'robot_start' robo.id %}" class="inline-form">
-          {% csrf_token %}
-          <button type="submit" class="link-btn link-btn-start">iniciar</button>
-        </form>
-        {% endif %}
-        {% endif %}
-      </td>
-    </tr>
-    {% empty %}
-    <tr>
-      <td colspan="6">Nenhum robô cadastrado ainda.</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="table-wrap">
+  <table class="robots-table">
+    <thead>
+      <tr>
+        <th>Nome</th>
+        <th>Status</th>
+        <th>Agora</th>
+        <th>Próxima execução</th>
+        <th>Última execução</th>
+        <th class="col-acoes">Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for robo in robos %}
+      <tr>
+        <td>
+          <details class="robo-details">
+            <summary>{{ robo.nome }}</summary>
+            <p class="robo-description">{{ robo.descricao|default:"Sem descrição." }}</p>
+          </details>
+          {% if robo.agente %}
+          <span class="last-run-time"><span class="tag tag-agente">{{ robo.agente.nome }}</span></span>
+          {% endif %}
+        </td>
+        <td>
+          <span class="status-badge status-{{ robo.status }}">{{ robo.get_status_display }}</span>
+        </td>
+        <td>
+          <span class="estado estado-{{ robo.estado_agora }}">{{ robo.texto_agora }}</span>
+        </td>
+        <td>
+          <span class="estado estado-{{ robo.estado_agenda }}">{{ robo.texto_agenda }}</span>
+          {% if robo.agenda_bloqueada %}
+          <span class="last-run-time">será recusado: robô {{ robo.get_status_display|lower }}</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if robo.ultima_execucao %}
+          <a href="{% url 'execution_detail' robo.ultima_execucao.id %}" class="table-link">
+            <span class="status-badge status-{{ robo.ultima_execucao.status }}">{{ robo.ultima_execucao.get_status_display }}</span>
+          </a>
+          {% if robo.ultima_execucao.iniciado_em %}
+          <span class="last-run-time">{{ robo.ultima_execucao.iniciado_em|timesince }} atrás</span>
+          {% endif %}
+          {% else %}
+          <span class="estado estado-manual">nunca executado</span>
+          {% endif %}
+        </td>
+        <td class="col-acoes">
+          <div class="acoes">
+            {% if perms.robots.executar_robo %}
+            {% if robo.estado_agora == "rodando" %}
+            <form method="post" action="{% url 'robot_stop' robo.id %}" class="inline-form">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-stop">parar</button>
+            </form>
+            {% elif robo.status == "ativo" %}
+            <form method="post" action="{% url 'robot_start' robo.id %}" class="inline-form">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-start">iniciar</button>
+            </form>
+            {% endif %}
+            {% endif %}
+            {% if perms.robots.change_robo %}
+            <a href="{% url 'robot_edit' robo.id %}" class="btn btn-sm btn-ghost btn-editar">editar</a>
+            {% endif %}
+            {% if perms.robots.delete_robo %}
+            <a href="{% url 'robot_exclusion' robo.id %}" class="btn btn-sm btn-remover" title="excluir {{ robo.nome }}">excluir</a>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% empty %}
+      <tr class="linha-vazia">
+        <td colspan="6">
+          Nenhum robô cadastrado ainda.
+          {% if perms.robots.add_robo %}
+          <a href="{% url 'robot_create' %}" class="table-link">Cadastre o primeiro</a> para começar.
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endblock %}

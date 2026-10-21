@@ -18,16 +18,27 @@ type Config struct {
 	Token string
 	// PastaRobos é a pasta aprovada: só robôs dentro dela rodam.
 	PastaRobos string
+	// UV roda os robôs que têm pyproject.toml na pasta (padrão "uv").
+	UV string
+	// Python roda os robôs sem pyproject.toml (padrão "python3").
+	Python string
+	// PastaVenvs, se definida, guarda o ambiente de cada robô fora da
+	// pasta dele (opcional). Usada no Docker, onde o .venv da pasta do
+	// robô foi criado pelo Python do host e não serve no container.
+	PastaVenvs string
 }
 
 // Carregar lê MAESTRO_URL, MAESTRO_TOKEN e AGENTE_PASTA_ROBOS e confere
-// cada um. Devolve todos os problemas de uma vez, para quem configura
+// cada um; AGENTE_UV, AGENTE_PYTHON e AGENTE_PASTA_VENVS são opcionais. Devolve todos os problemas de uma vez, para quem configura
 // não precisar corrigir um por um.
 func Carregar() (Config, error) {
 	cfg := Config{
 		URL:        strings.TrimSpace(os.Getenv("MAESTRO_URL")),
 		Token:      strings.TrimSpace(os.Getenv("MAESTRO_TOKEN")),
 		PastaRobos: strings.TrimSpace(os.Getenv("AGENTE_PASTA_ROBOS")),
+		UV:         padrao(os.Getenv("AGENTE_UV"), "uv"),
+		Python:     padrao(os.Getenv("AGENTE_PYTHON"), "python3"),
+		PastaVenvs: strings.TrimSpace(os.Getenv("AGENTE_PASTA_VENVS")),
 	}
 
 	var problemas []error
@@ -59,5 +70,23 @@ func Carregar() (Config, error) {
 		}
 	}
 
+	if cfg.PastaVenvs != "" {
+		if !filepath.IsAbs(cfg.PastaVenvs) {
+			problemas = append(problemas,
+				fmt.Errorf("AGENTE_PASTA_VENVS precisa ser um caminho absoluto: %q", cfg.PastaVenvs))
+		} else if err := os.MkdirAll(cfg.PastaVenvs, 0o755); err != nil {
+			problemas = append(problemas,
+				fmt.Errorf("AGENTE_PASTA_VENVS não pôde ser criada: %w", err))
+		}
+	}
+
 	return cfg, errors.Join(problemas...)
+}
+
+// padrao devolve valor sem espaços nas pontas, ou alternativa se vazio.
+func padrao(valor, alternativa string) string {
+	if v := strings.TrimSpace(valor); v != "" {
+		return v
+	}
+	return alternativa
 }

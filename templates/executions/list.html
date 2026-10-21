@@ -7,51 +7,66 @@
 
 {% block content %}
 <div class="page-header">
-  <h1>~/execucoes</h1>
+  <div>
+    <h1>~/execucoes</h1>
+    <p class="page-subtitle">Histórico de todas as execuções, da mais recente para a mais antiga.</p>
+  </div>
 </div>
 
-<table class="robots-table">
-  <thead>
-    <tr>
-      <th>Robô</th>
-      <th>Status</th>
-      <th>Disparado por</th>
-      <th>Iniciado</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for execucao in execucoes %}
-    <tr>
-      <td>
-        <a href="{% url 'execution_detail' execucao.id %}" class="table-link">{{ execucao.robo.nome }}</a>
-      </td>
-      <td>
-        <span class="status-badge status-{{ execucao.status }}">{{ execucao.get_status_display }}</span>
-        {% if execucao.tentativa > 1 %}
-        <span class="last-run-time">tentativa {{ execucao.tentativa }}</span>
-        {% endif %}
-      </td>
-      <td>
-        {% if execucao.origem == "agendamento" %}
-        <span class="tag tag-agendamento">agendado</span>
-        {{ execucao.agendamento.criado_por.username|default:"—" }}
-        {% else %}
-        {{ execucao.disparado_por.username|default:"—" }}
-        {% endif %}
-      </td>
-      <td>
-        {% if execucao.iniciado_em %}
-        {{ execucao.iniciado_em|timesince }} atrás
-        {% else %}
-        —
-        {% endif %}
-      </td>
-    </tr>
-    {% empty %}
-    <tr>
-      <td colspan="4">Nenhuma execução registrada ainda.</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="table-wrap">
+  <table class="robots-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Robô</th>
+        <th>Status</th>
+        <th>Disparado por</th>
+        <th>Iniciado</th>
+        <th>Duração</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for execucao in execucoes %}
+      <tr>
+        <td>
+          <a href="{% url 'execution_detail' execucao.id %}" class="table-link estado-manual">#{{ execucao.id }}</a>
+        </td>
+        <td>
+          <a href="{% url 'execution_detail' execucao.id %}" class="table-link">{{ execucao.robo.nome }}</a>
+        </td>
+        <td>
+          <span class="status-badge status-{{ execucao.status }}">{{ execucao.get_status_display }}</span>
+          {% if execucao.tentativa > 1 %}
+          <span class="last-run-time">tentativa {{ execucao.tentativa }}</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if execucao.origem == "agendamento" %}
+          <span class="tag tag-agendamento">agendado</span>
+          {{ execucao.agendamento.criado_por.username|default:"—" }}
+          {% else %}
+          {{ execucao.disparado_por.username|default:"—" }}
+          {% endif %}
+        </td>
+        <td>
+          {% if execucao.iniciado_em %}
+          {{ execucao.iniciado_em|timesince }} atrás
+          <span class="last-run-time">{{ execucao.iniciado_em|date:"d/m/Y H:i" }}</span>
+          {% else %}
+          —
+          {% endif %}
+        </td>
+        <td class="estado-manual">{{ execucao.duracao_formatada|default:"—" }}</td>
+      </tr>
+      {% empty %}
+      <tr class="linha-vazia">
+        <td colspan="6">
+          Nenhuma execução registrada ainda. Inicie um robô na tela de
+          <a href="{% url 'robot_list' %}" class="table-link">robôs</a>.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endblock %}

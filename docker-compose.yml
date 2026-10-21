@@ -1,0 +1,80 @@
+# Ambiente de desenvolvimento completo num comando só:
+#
+#   docker compose up -d --build
+#
+# Sobe o Redis, o Maestro (Daphne em http://localhost:8000), o worker do
+# Celery com o agendador e o agente em Go. O código é montado em /app,
+# então mudanças em Python e templates valem na hora (o runserver
+# recarrega; o worker precisa de "docker compose restart worker").
+#
+# O agente precisa do token: crie o agente em configurações → agentes,
+# coloque MAESTRO_TOKEN no agente.env (veja agente.env.example) e rode
+# "docker compose up -d agente".
+name: maestro
+
+x-maestro: &maestro
+  # Sem "image:" fixo: web e worker constroem ao mesmo tempo, e duas
+  # construções com o mesmo nome de imagem colidem ("already exists").
+  # O cache é o mesmo, então a segunda sai na hora.
+  build: .
+  # Mesmo usuário do host: db.sqlite3 e os arquivos criados continuam
+  # seus, e não do root.
+  user: "${UID:-1000}:${GID:-1000}"
+  environment:
+    CELERY_BROKER_URL: redis://redis:6379/0
+    CHANNELS_REDIS_URL: redis://redis:6379/1
+    HOME: /tmp
+  volumes:
+    - .:/app
+  depends_on:
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    volumes:
+      - redis-dados:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  web:
+    <<: *maestro
+    command: >-
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py runserver 0.0.0.0:8000"
+    ports:
+      - "8000:8000"
+
+  worker:
+    <<: *maestro
+    command: celery -A maestro worker -B --loglevel=info
+
+  agente:
+    build: ./agente-go
+    # Recolhe os processos órfãos dos robôs (navegadores) e repassa o
+    # SIGTERM ao agente, que encerra os robôs em andamento.
+    init: true
+    env_file:
+      - path: agente.env
+        required: false
+    environment:
+      MAESTRO_URL: ws://web:8000/ws/agente/
+      AGENTE_PASTA_ROBOS: /robos
+      AGENTE_PASTA_VENVS: /var/lib/agente/venvs
+    volumes:
+      # Pasta dos robôs no host; defina AGENTE_ROBOS_HOST no .env.
+      - ${AGENTE_ROBOS_HOST:-./scripts}:/robos
+      - agente-dados:/var/lib/agente
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  redis-dados:
+  agente-dados:

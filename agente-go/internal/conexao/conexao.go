@@ -11,12 +11,15 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/Zavan7/maestro-zavan/agente-go/internal/protocolo"
 )
 
 const (
 	intervaloHeartbeat = 30 * time.Second
 	esperaMaxima       = 30 * time.Second
 	prazoEscrita       = 10 * time.Second
+	prazoFechamento    = 2 * time.Second
 
 	// Códigos de fechamento definidos em docs/agente/protocolo.md.
 	codigoTokenRevogado = 4401
@@ -31,30 +34,35 @@ var ErrTokenRecusado = errors.New("o Maestro recusou o token (403)")
 // Reconectar faria os dois agentes se derrubarem para sempre.
 var ErrSubstituido = errors.New("outra conexão abriu com o mesmo token (4409)")
 
-// Mensagem é o envelope comum: todo JSON do protocolo tem o campo "tipo".
-type Mensagem struct {
-	Tipo string `json:"tipo"`
-}
-
-// Recebida guarda os campos que o agente lê dos comandos do Maestro.
-type Recebida struct {
-	Tipo            string `json:"tipo"`
-	ExecucaoID      int64  `json:"execucao_id"`
-	Robo            string `json:"robo"`
-	TimeoutSegundos int    `json:"timeout_segundos"`
-	Mensagem        string `json:"mensagem"`
-}
-
 // Cliente é a conexão do agente com o Maestro.
 type Cliente struct {
-	url    string
-	token  string
-	logger *slog.Logger
+	url       string
+	token     string
+	logger    *slog.Logger
+	aoReceber func(protocolo.Recebida)
+	saida     *fila
 }
 
-// Novo cria um Cliente para o endereço e o token informados.
-func Novo(url, token string, logger *slog.Logger) *Cliente {
-	return &Cliente{url: url, token: token, logger: logger}
+// Novo cria um Cliente para o endereço e o token informados. aoReceber
+// é chamada com cada comando do Maestro, na goroutine de leitura: ela
+// não pode demorar (o gerente de execuções roda cada robô à parte).
+func Novo(url, token string, logger *slog.Logger, aoReceber func(protocolo.Recebida)) *Cliente {
+	return &Cliente{
+		url:       url,
+		token:     token,
+		logger:    logger,
+		aoReceber: aoReceber,
+		saida:     novaFila(LimiteFila),
+	}
+}
+
+// Enviar coloca uma mensagem na fila de saída. Pode ser chamada de
+// qualquer goroutine, com ou sem conexão aberta: o que não sair agora
+// sai depois de reconectar.
+func (c *Cliente) Enviar(v any) {
+	if !c.saida.por(v) {
+		c.logger.Warn("fila de saída cheia; linhas de log descartadas", "limite", LimiteFila)
+	}
 }
 
 // Rodar conecta e reconecta até o contexto ser cancelado ou acontecer um
@@ -103,9 +111,8 @@ func (c *Cliente) conversar(ctx context.Context) (bool, error) {
 	defer encerrar()
 
 	// Só uma goroutine escreve na conexão: o gorilla/websocket não aceita
-	// duas escritas ao mesmo tempo. Quem quiser enviar algo usa o canal.
-	saida := make(chan any, 64)
-	go c.escrever(ctxConversa, conn, saida)
+	// duas escritas ao mesmo tempo. Quem quiser enviar algo usa a fila.
+	go c.escrever(ctxConversa, conn)
 
 	// Ctrl+C: avisa o Maestro com um fechamento educado; isso faz a
 	// leitura abaixo terminar.
@@ -114,21 +121,24 @@ func (c *Cliente) conversar(ctx context.Context) (bool, error) {
 		if ctx.Err() != nil {
 			fechamento := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "agente desligando")
 			_ = conn.WriteControl(websocket.CloseMessage, fechamento, time.Now().Add(time.Second))
+			// Se o Maestro não responder ao fechamento, não fica
+			// esperando para sempre.
+			time.AfterFunc(prazoFechamento, func() { _ = conn.Close() })
 		}
 	}()
 
 	for {
-		var msg Recebida
+		var msg protocolo.Recebida
 		if err := conn.ReadJSON(&msg); err != nil {
 			return true, traduzirFechamento(err)
 		}
-		c.atender(msg)
+		c.aoReceber(msg)
 	}
 }
 
-// escrever é a única goroutine que escreve na conexão. Ela envia o que
-// chega pelo canal e, a cada 30 s, o heartbeat.
-func (c *Cliente) escrever(ctx context.Context, conn *websocket.Conn, saida <-chan any) {
+// escrever é a única goroutine que escreve na conexão. Ela esvazia a
+// fila de saída e, a cada 30 s, manda o heartbeat.
+func (c *Cliente) escrever(ctx context.Context, conn *websocket.Conn) {
 	relogio := time.NewTicker(intervaloHeartbeat)
 	defer relogio.Stop()
 
@@ -142,8 +152,30 @@ func (c *Cliente) escrever(ctx context.Context, conn *websocket.Conn, saida <-ch
 		return true
 	}
 
+	// Uma mensagem só sai da fila depois de escrita: se a escrita
+	// falhar, ela continua lá e vai na próxima conexão.
+	esvaziar := func() bool {
+		for {
+			v, tem := c.saida.primeiro()
+			if !tem {
+				return true
+			}
+			if !enviar(v) {
+				return false
+			}
+			c.saida.tirar()
+		}
+	}
+
 	// Um sinal logo ao conectar: o painel mostra o agente online na hora.
-	if !enviar(Mensagem{Tipo: "heartbeat"}) {
+	// Depois, o que ficou na fila enquanto o agente estava sem conexão.
+	if !enviar(protocolo.NovoHeartbeat()) {
+		return
+	}
+	if pendentes := c.saida.tamanho(); pendentes > 0 {
+		c.logger.Info("reenviando mensagens pendentes", "quantidade", pendentes)
+	}
+	if !esvaziar() {
 		return
 	}
 	for {
@@ -151,30 +183,14 @@ func (c *Cliente) escrever(ctx context.Context, conn *websocket.Conn, saida <-ch
 		case <-ctx.Done():
 			return
 		case <-relogio.C:
-			if !enviar(Mensagem{Tipo: "heartbeat"}) {
+			if !enviar(protocolo.NovoHeartbeat()) {
 				return
 			}
-		case v := <-saida:
-			if !enviar(v) {
+		case <-c.saida.aviso:
+			if !esvaziar() {
 				return
 			}
 		}
-	}
-}
-
-// atender trata um comando do Maestro. Neste passo só registra o que
-// chegou; iniciar e parar entram nos próximos passos.
-func (c *Cliente) atender(msg Recebida) {
-	switch msg.Tipo {
-	case "erro":
-		// O Maestro só manda "erro" quando o agente fere o protocolo:
-		// é bug do agente, então vai para o log como erro.
-		c.logger.Error("o Maestro apontou erro de protocolo", "mensagem", msg.Mensagem)
-	case "iniciar", "parar":
-		c.logger.Info("comando recebido (ainda não implementado)",
-			"tipo", msg.Tipo, "execucao_id", msg.ExecucaoID, "robo", msg.Robo)
-	default:
-		c.logger.Warn("mensagem de tipo desconhecido ignorada", "tipo", msg.Tipo)
 	}
 }
 

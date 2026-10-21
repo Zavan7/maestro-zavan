@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Excluir Robô — Maestro{% endblock %}
+{% block title %}Excluir robô — Maestro{% endblock %}
+
+{% block path %}~/maestro/robots/{{ robo.id }}/excluir{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/robots.css' %}" />
@@ -16,7 +18,7 @@
   <p>Tem certeza que deseja excluir o robô <strong>{{ robo.nome }}</strong>?</p>
   <p class="page-subtitle">Essa ação não pode ser desfeita.</p>
 
-  <form method="post">
+  <form method="post" class="form-acoes">
     {% csrf_token %}
     <button type="submit" class="btn btn-danger">confirmar exclusão</button>
     <a href="{% url 'robot_list' %}" class="link-btn">cancelar</a>

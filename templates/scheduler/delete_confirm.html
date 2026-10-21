@@ -13,7 +13,7 @@
   <p>Excluir o agendamento de <strong>{{ agendamento.robo.nome }}</strong> às {{ agendamento.horario|time:"H:i" }}?</p>
   <p class="page-subtitle">As execuções já feitas continuam no histórico.</p>
 
-  <form method="post">
+  <form method="post" class="form-acoes">
     {% csrf_token %}
     <button type="submit" class="btn btn-danger">confirmar exclusão</button>
     <a href="{% url 'schedule_list' %}" class="link-btn">cancelar</a>

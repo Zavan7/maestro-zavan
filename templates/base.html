@@ -3,7 +3,9 @@
 <html lang="pt-br">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{% block title %}Maestro{% endblock %}</title>
+    <link rel="icon" href="{% static 'img/logo-mark.svg' %}" type="image/svg+xml" />
     <link rel="stylesheet" href="{% static 'css/base.css' %}" />
     {% block extra_css %}{% endblock %}
   </head>
@@ -11,28 +13,30 @@
     <div class="app-shell">
       <aside class="sidebar">
         <div class="sidebar-logo">
-          <img src="{% static 'img/logo-mark.svg' %}" alt="Maestro" class="sidebar-mark" />
+          <a href="{% url 'home' %}" aria-label="Início">
+            <img src="{% static 'img/logo-mark.svg' %}" alt="Maestro" class="sidebar-mark" />
+          </a>
         </div>
 
         <nav class="sidebar-nav">
           <a href="{% url 'home' %}"
              class="nav-link {% if request.resolver_match.url_name == 'home' %}active{% endif %}">
+            <span class="nav-icon" aria-hidden="true">⌂</span>
             início
           </a>
           <a href="{% url 'robot_list' %}"
-             class="nav-link {% if request.resolver_match.url_name == 'robot_list' %}active{% endif %}">
+             class="nav-link {% if 'robot' in request.resolver_match.url_name %}active{% endif %}">
+            <span class="nav-icon" aria-hidden="true">◆</span>
             robôs
           </a>
-          <a href="{% url 'robot_create' %}"
-             class="nav-link {% if request.resolver_match.url_name == 'robot_create' %}active{% endif %}">
-            cadastrar robô
-          </a>
           <a href="{% url 'execution_list' %}"
-             class="nav-link {% if request.resolver_match.url_name == 'execution_list' %}active{% endif %}">
+             class="nav-link {% if 'execution' in request.resolver_match.url_name %}active{% endif %}">
+            <span class="nav-icon" aria-hidden="true">▤</span>
             execuções
           </a>
           <a href="{% url 'schedule_list' %}"
              class="nav-link {% if 'schedule' in request.resolver_match.url_name %}active{% endif %}">
+            <span class="nav-icon" aria-hidden="true">◷</span>
             agendamentos
           </a>
 
@@ -40,23 +44,30 @@
           <span class="nav-divider"></span>
 
           <a href="{% url 'config_home' %}"
-             class="nav-link {% if 'config' in request.resolver_match.url_name %}active{% endif %}">
+             class="nav-link {% if 'config' in request.resolver_match.url_name or 'agent' in request.resolver_match.url_name %}active{% endif %}">
+            <span class="nav-icon" aria-hidden="true">⚙</span>
             configurações
           </a>
           {% endif %}
         </nav>
+
+        <p class="sidebar-rodape">maestro · zv labs</p>
       </aside>
 
       <div class="app-main">
         <header class="terminal-titlebar app-header">
-          <span class="dot dot-red"></span>
-          <span class="dot dot-yellow"></span>
-          <span class="dot dot-green"></span>
-          <span class="terminal-path">{% block path %}~/maestro{% endblock %}</span>
+          <div class="app-header-prompt">
+            <span class="dot dot-red"></span>
+            <span class="dot dot-yellow"></span>
+            <span class="dot dot-green"></span>
+            <span class="terminal-path">
+              <span class="prompt-user">{{ user.username }}@maestro</span>:<span class="prompt-path">{% block path %}~/maestro{% endblock %}</span>$<span class="prompt-cursor" aria-hidden="true"></span>
+            </span>
+          </div>
 
           <form method="post" action="{% url 'logout' %}" class="logout-form">
             {% csrf_token %}
-            <button type="submit" class="link-btn">sair</button>
+            <button type="submit" class="link-btn">sair ↩</button>
           </form>
         </header>
 

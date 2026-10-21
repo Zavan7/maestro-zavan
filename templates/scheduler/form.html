@@ -12,6 +12,7 @@
 {% block content %}
 <div class="page-header">
   <h1>~/agendamentos/{{ titulo }}</h1>
+  <a href="{% url 'schedule_list' %}" class="link-btn">← voltar para agendamentos</a>
 </div>
 
 <form method="post" class="form-card">
@@ -39,6 +40,9 @@
 
   <label class="check">{{ form.ativo }} ativo</label>
 
-  <button type="submit" class="btn">salvar</button>
+  <div class="form-acoes">
+    <button type="submit" class="btn">salvar</button>
+    <a href="{% url 'schedule_list' %}" class="link-btn">cancelar</a>
+  </div>
 </form>
 {% endblock %}

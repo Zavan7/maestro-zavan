@@ -1,92 +1,14 @@
-.robots-table {
-  width: 100%;
-  border-collapse: collapse;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.robots-table th {
-  text-align: left;
-  padding: 0.75rem 1rem;
-  background: var(--card-bg);
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  border-bottom: 1px solid var(--border);
-}
-
-.robots-table td {
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.9rem;
-}
-
-.robots-table tr:last-child td {
-  border-bottom: none;
-}
-
-.robots-table tr:hover td {
-  background: var(--card-bg);
-}
-
-.status-badge {
-  display: inline-block;
-  padding: 0.2rem 0.6rem;
-  border-radius: 4px;
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-/* Status do Robo */
-.status-ativo {
-  background: rgba(77, 174, 80, 0.15);
-  color: #4dae50;
-}
-
-.status-inativo {
-  background: rgba(107, 111, 118, 0.15);
-  color: var(--text-muted);
-}
-
-.status-manutencao {
-  background: rgba(232, 152, 58, 0.15);
-  color: var(--accent);
-}
-
-/* Status da Execucao */
-.status-sucesso {
-  background: rgba(77, 174, 80, 0.15);
-  color: #4dae50;
-}
-
-.status-falha {
-  background: rgba(229, 72, 77, 0.15);
-  color: var(--error);
-}
-
-.status-rodando {
-  background: rgba(107, 111, 118, 0.15);
-  color: var(--text-muted);
-}
-
-.status-pendente {
-  background: rgba(232, 152, 58, 0.15);
-  color: var(--accent);
-}
-
-.last-run-time {
-  display: block;
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  margin-top: 0.2rem;
-}
+/* Tabela, badges e botões vêm do base.css; aqui só o que é da tela. */
 
 .robo-details summary {
   cursor: pointer;
   list-style: none;
+  font-weight: 500;
+  transition: color var(--transicao);
+}
+
+.robo-details summary:hover {
+  color: var(--accent-text);
 }
 
 .robo-details summary::-webkit-details-marker {
@@ -106,15 +28,9 @@
 .robo-description {
   margin: 0.5rem 0 0;
   padding-left: 1rem;
+  max-width: 42ch;
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
   border-left: 2px solid var(--border);
-}
-
-.link-btn-start {
-  color: #4dae50;
-}
-
-.link-btn-stop {
-  color: var(--error);
 }

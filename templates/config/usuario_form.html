@@ -12,7 +12,7 @@
 {% block content %}
 <div class="page-header">
   <h1>~/configuracoes/usuarios/novo</h1>
-  <a href="{% url 'config_users' %}" class="link-btn">voltar para usuários</a>
+  <a href="{% url 'config_users' %}" class="link-btn">← voltar para usuários</a>
 </div>
 
 <form method="post" class="form-card">
@@ -32,6 +32,9 @@
 
   <p class="config-vazio">Usuários criados aqui nunca são superusuários. O grupo pode ser trocado depois na lista.</p>
 
-  <button type="submit" class="btn">criar usuário</button>
+  <div class="form-acoes">
+    <button type="submit" class="btn">criar usuário</button>
+    <a href="{% url 'config_users' %}" class="link-btn">cancelar</a>
+  </div>
 </form>
 {% endblock %}

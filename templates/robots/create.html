@@ -11,7 +11,11 @@
 
 {% block content %}
 <div class="page-header">
-  <h1>~/robots/novo</h1>
+  <div>
+    <h1>~/robots/novo</h1>
+    <p class="page-subtitle">O script é resolvido dentro da pasta aprovada do worker ou do agente.</p>
+  </div>
+  <a href="{% url 'robot_list' %}" class="link-btn">← voltar para robôs</a>
 </div>
 
 <form method="post" class="form-card">
@@ -19,6 +23,9 @@
 
   {% include "robots/_campos.html" %}
 
-  <button type="submit" class="btn">cadastrar</button>
+  <div class="form-acoes">
+    <button type="submit" class="btn">cadastrar</button>
+    <a href="{% url 'robot_list' %}" class="link-btn">cancelar</a>
+  </div>
 </form>
 {% endblock %}

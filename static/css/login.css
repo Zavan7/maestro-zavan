@@ -8,8 +8,9 @@ body.login-page {
 .terminal-card {
   background: var(--card-bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  width: 360px;
+  border-radius: var(--radius-lg);
+  width: min(360px, calc(100vw - 2rem));
+  animation: surgir 0.35s ease-out;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
   overflow: hidden;
 }

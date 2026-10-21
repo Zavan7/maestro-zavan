@@ -27,8 +27,10 @@
       <span class="last-run-time">{{ usuarios_inativos }} desativado{{ usuarios_inativos|pluralize }}</span>
       {% endif %}
     </p>
-    <a href="{% url 'config_users' %}" class="btn config-acao">gerenciar usuários</a>
-    <a href="{% url 'config_user_create' %}" class="link-btn config-acao">novo usuário</a>
+    <div class="form-acoes config-acao">
+      <a href="{% url 'config_users' %}" class="btn btn-ghost">gerenciar usuários</a>
+      <a href="{% url 'config_user_create' %}" class="link-btn">+ novo usuário</a>
+    </div>
   </section>
   {% endif %}
 
@@ -41,7 +43,9 @@
     <p class="config-valor">
       <strong>{{ agentes_online }}</strong> online de {{ agentes_ativos }} ativo{{ agentes_ativos|pluralize }}
     </p>
-    <a href="{% url 'agent_list' %}" class="btn config-acao">gerenciar agentes</a>
+    <div class="form-acoes config-acao">
+      <a href="{% url 'agent_list' %}" class="btn btn-ghost">gerenciar agentes</a>
+    </div>
   </section>
   {% endif %}
 
@@ -63,7 +67,9 @@
       </li>
       {% endfor %}
     </ul>
-    <a href="{% url 'config_home' %}#status" class="link-btn config-acao">verificar de novo</a>
+    <div class="form-acoes config-acao">
+      <a href="{% url 'config_home' %}#status" class="link-btn">↻ verificar de novo</a>
+    </div>
   </section>
   {% endif %}
 

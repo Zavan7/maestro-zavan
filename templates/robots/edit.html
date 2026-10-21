@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Editar Robô — Maestro{% endblock %}
+{% block title %}Editar robô — Maestro{% endblock %}
+
+{% block path %}~/maestro/robots/{{ robo.id }}/editar{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/robots.css' %}" />
@@ -9,7 +11,11 @@
 
 {% block content %}
 <div class="page-header">
-  <h1>~/robots/{{ robo.id }}/editar</h1>
+  <div>
+    <h1>~/robots/{{ robo.id }}/editar</h1>
+    <p class="page-subtitle">{{ robo.nome }}</p>
+  </div>
+  <a href="{% url 'robot_list' %}" class="link-btn">← voltar para robôs</a>
 </div>
 
 <form method="post" class="form-card">
@@ -17,6 +23,9 @@
 
   {% include "robots/_campos.html" %}
 
-  <button type="submit" class="btn">salvar alterações</button>
+  <div class="form-acoes">
+    <button type="submit" class="btn">salvar alterações</button>
+    <a href="{% url 'robot_list' %}" class="link-btn">cancelar</a>
+  </div>
 </form>
 {% endblock %}

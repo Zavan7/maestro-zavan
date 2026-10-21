@@ -17,6 +17,7 @@ Primeiro produto da **ZV Labs**.
 - [Stack](#stack)
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Como rodar localmente](#como-rodar-localmente)
+- [Como rodar com Docker](#como-rodar-com-docker)
 - [Rotas](#rotas)
 - [Perfis e permissões](#perfis-e-permissões)
 - [Execução de robôs](#execução-de-robôs)
@@ -236,6 +237,43 @@ O `-B` roda o agendador (beat) junto com o worker, o que basta em desenvolviment
 O worker não recarrega sozinho: depois de alterar models ou tarefas, reinicie-o.
 
 Acesse `http://localhost:8000/`.
+
+---
+
+## Como rodar com Docker
+
+Um comando sobe tudo: Redis, Maestro (Daphne), worker do Celery com o agendador e o agente em Go.
+
+```bash
+docker compose up -d --build
+```
+
+| Serviço | O que roda | Observação |
+|---|---|---|
+| `redis` | Redis 7.4 | sem porta no host; dados no volume `redis-dados` |
+| `web` | `migrate` + `runserver` (Daphne) | `http://localhost:8000` |
+| `worker` | `celery -A maestro worker -B` | reinicie com `docker compose restart worker` depois de mudar tarefas |
+| `agente` | agente em Go | precisa do token (abaixo) |
+
+O código é montado em `/app`, e o `db.sqlite3` é o mesmo do host. Web e worker rodam com o seu usuário (UID 1000), então os arquivos criados continuam seus. Antes de subir, pare o `runserver` e o worker que estiverem rodando fora do Docker: a porta 8000 é a mesma.
+
+### Agente no Docker
+
+1. Suba o Maestro e crie o agente em **configurações → agentes**.
+2. Copie `agente.env.example` para `agente.env` e cole o token. Ele fica separado do `.env` para não chegar ao worker, que repassa o próprio ambiente aos robôs.
+3. No `.env`, aponte a pasta dos robôs do host com `AGENTE_ROBOS_HOST=/caminho/dos/robos`. Ela é montada em `/robos`, então o caminho do robô no cadastro continua relativo a ela.
+4. Rode `docker compose up -d agente`.
+5. Baixe os navegadores do Playwright dos robôs (uma vez por versão do Playwright): `docker compose exec agente instalar-navegadores`.
+
+No container, cada robô ganha um venv próprio no volume `agente-dados` (`AGENTE_PASTA_VENVS`), e o `.venv` da pasta do robô no host não é tocado. Não há tela no container: robôs com Playwright precisam rodar com `headless=True`.
+
+Comandos úteis:
+
+```bash
+docker compose logs -f agente        # log de um serviço
+docker compose exec web python manage.py createsuperuser
+docker compose down                  # para tudo (volumes ficam)
+```
 
 ---
 

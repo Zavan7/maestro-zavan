@@ -1,0 +1,13 @@
+.git
+.venv
+.env
+agente.env
+.mypy_cache
+.ruff_cache
+.vscode
+**/__pycache__
+*.pyc
+db.sqlite3*
+celerybeat-schedule*
+dump.rdb
+agente-go

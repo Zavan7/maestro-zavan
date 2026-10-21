@@ -185,7 +185,18 @@ O que o agente em Go precisa ter, além do que a referência em Python já faz:
 1. Suba o Maestro (`uv run manage.py runserver`, que é o Daphne) e o Redis.
 2. Em **configurações → agentes**, crie um agente e copie o token.
 3. Cadastre um robô com esse agente e o caminho relativo à pasta do agente.
-4. Rode o agente com `MAESTRO_URL=ws://localhost:8000/ws/agente/` e o token.
+4. Rode o agente em Go:
+
+   ```bash
+   cd agente-go
+   go build -o agente .
+   export MAESTRO_URL=ws://localhost:8000/ws/agente/
+   export MAESTRO_TOKEN=mae_...                    # troque pelo token do agente
+   export AGENTE_PASTA_ROBOS=/caminho/dos/robos     # troque pela pasta aprovada
+   ./agente
+   ```
+
+   `AGENTE_UV` e `AGENTE_PYTHON` são opcionais (padrão `uv` e `python3`). Os testes do agente rodam com `go test ./...`.
 5. Inicie e pare o robô pela tela; o log aparece ao vivo na tela de detalhe.
 
 Para comparar o comportamento, rode a referência em Python no lugar do agente em Go:

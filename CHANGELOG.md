@@ -19,9 +19,21 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 - Robôs podem rodar num agente: o disparo manda `iniciar` ao agente, o "parar" manda `parar`, e o agente devolve o log ao vivo e como terminou, pelo WebSocket `ws/agente/`
 - Protocolo do agente documentado em `docs/agente/protocolo.md` e agente de referência em Python (`tools/agente_referencia.py`) para testar sem o agente em Go
 - Status do sistema mostra quantos agentes estão online
+- Agente em Go executa os robôs: `iniciar` resolve o robô dentro da pasta aprovada (barrando `../`, caminho absoluto e link simbólico para fora), roda com `uv run` quando a pasta do robô tem `pyproject.toml` (senão com `python3 -u`), manda o log em lotes de 0,5 s dentro dos limites do protocolo e o `fim` com motivo e código de saída
+- Agente em Go para os robôs: `parar` e tempo esgotado mandam SIGTERM ao grupo de processos e SIGKILL 5 s depois; filhos que sobram são encerrados; ao desligar, o agente encerra os robôs em andamento
+- Agente em Go guarda numa fila o que não conseguiu enviar e reenvia ao reconectar, na mesma ordem e sem repetir o que já saiu
+- O robô rodado pelo agente não herda o `MAESTRO_TOKEN`
+- Docker: `docker compose up -d --build` sobe Redis, Maestro (Daphne), worker com agendador e agente em Go; o token do agente fica em `agente.env`, separado do `.env`, e `instalar-navegadores` baixa os navegadores do Playwright de cada robô
+- `AGENTE_PASTA_VENVS` no agente: cada robô ganha um venv fora da própria pasta, para o container não usar nem sobrescrever o `.venv` do host
+- Testes do agente em Go (`go test ./...`): configuração, resolução do robô, executor, execuções e conexão contra um Maestro falso
 
 ### Alterado
 
+- Interface revisada: um sistema de botões só (primário, contorno, iniciar, parar, perigo e link), ações das tabelas alinhadas numa linha, campos `select` e `textarea` com o mesmo estilo dos `input`, foco visível em tudo, tabelas com rolagem horizontal em telas estreitas e sidebar que vira barra no topo no celular
+- Cabeçalho com prompt `usuario@maestro:~/caminho$`, ícones no menu, botões "+ novo" no topo das listas e "voltar"/"cancelar" em todos os formulários; "cadastrar robô" sai do menu e vai para o topo da tela de robôs
+- Movimento discreto (status "rodando", log "ao vivo" e agente online pulsando, mensagens e páginas surgindo), desligado com `prefers-reduced-motion`
+- Lista de execuções com número e duração; detalhe com os dados num cartão, o agente do robô e o log numa janela de terminal
+- O painel inicial mostra os agentes ativos de verdade (online ou há quanto tempo offline, e quantos robôs cada um tem)
 - O botão "parar" encerra o processo de verdade: marca `parada_solicitada`, e o executor manda SIGTERM ao grupo de processos e SIGKILL 5 segundos depois, alcançando navegadores e outros filhos
 - Processos filhos que sobram depois de um robô terminar são encerrados
 - Os scripts rodam com `python -u`, para cada linha do log chegar assim que é escrita
@@ -34,6 +46,9 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 ### Corrigido
 
+- Status "manutenção" e "pendente" ficavam quase invisíveis na tela de robôs, porque o `robots.css` repetia os badges com a cor de preenchimento
+- As classes `page-subtitle` e `section-title` eram usadas sem estar definidas
+- `ROBOS_SCRIPTS_DIR=` vazio no `.env` fazia o worker procurar os scripts na pasta de onde foi iniciado
 - As mensagens de erro de formulário só tinham estilo na tela de login
 
 ## [1.1.0] - 2026-10-21

@@ -178,3 +178,8 @@ maestro-roteiro-proximos-passos.md
 celerybeat-schedule*
 # Redis local
 dump.rdb
+# Token do agente no Docker
+agente.env
+
+# Binário do agente em Go (gerado por go build)
+agente-go/agente

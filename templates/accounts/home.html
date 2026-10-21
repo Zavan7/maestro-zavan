@@ -11,8 +11,16 @@
 
 {% block content %}
 <header class="home-header">
-  <h1>Olá, {{ user.first_name|default:user.username }}</h1>
-  <p class="page-subtitle">{{ total_robos }} robô{{ total_robos|pluralize }} cadastrado{{ total_robos|pluralize }}</p>
+  <div>
+    <h1>Olá, {{ user.first_name|default:user.username }}<span class="home-cursor" aria-hidden="true">_</span></h1>
+    <p class="page-subtitle">{{ total_robos }} robô{{ total_robos|pluralize }} cadastrado{{ total_robos|pluralize }} · {{ agentes|length }} agente{{ agentes|length|pluralize }} ativo{{ agentes|length|pluralize }}</p>
+  </div>
+  <div class="page-acoes">
+    <a href="{% url 'robot_list' %}" class="btn btn-ghost">ver robôs</a>
+    {% if perms.robots.add_robo %}
+    <a href="{% url 'robot_create' %}" class="btn">+ novo robô</a>
+    {% endif %}
+  </div>
 </header>
 
 <section class="fleet" aria-label="Robôs por status">
@@ -43,6 +51,7 @@
       <span class="dot dot-yellow"></span>
       <span class="dot dot-green"></span>
       <span class="terminal-path">tail -f execucoes.log</span>
+      <a href="{% url 'execution_list' %}" class="link-btn panel-link">ver todas →</a>
     </div>
 
     <ol class="console-feed">
@@ -86,11 +95,38 @@
     </section>
 
     <section class="panel">
-      <h2 class="panel-title">Agentes</h2>
+      <h2 class="panel-title">
+        Agentes
+        {% if perms.config.gerenciar_agentes %}
+        <a href="{% url 'agent_list' %}" class="link-btn">gerenciar →</a>
+        {% endif %}
+      </h2>
+      {% if agentes %}
+      <ul class="agentes-lista">
+        {% for agente in agentes %}
+        <li>
+          <span class="agente-nome">
+            <span class="agente-sinal {% if agente.online %}online{% endif %}" aria-hidden="true"></span>
+            {{ agente.nome }}
+          </span>
+          <span class="agente-info">
+            {% if agente.online %}
+            <span class="agente-online">online</span>
+            {% elif agente.ultimo_sinal %}
+            offline há {{ agente.ultimo_sinal|timesince }}
+            {% else %}
+            nunca conectou
+            {% endif %}
+            · {{ agente.total_robos }} robô{{ agente.total_robos|pluralize }}
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
       <p class="panel-empty">
-        Nenhum agente conectado. As máquinas que executam os robôs vão aparecer aqui,
-        com status online e o último sinal recebido.
+        Nenhum agente ativo. Todos os robôs rodam no worker do Maestro.
       </p>
+      {% endif %}
     </section>
   </aside>
 </div>

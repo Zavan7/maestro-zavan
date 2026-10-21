@@ -88,7 +88,7 @@ def execution_detail(request: RequisicaoAutenticada, pk: int) -> HttpResponse:
     """
     execucao = get_object_or_404(
         Execucao.objects.select_related(
-            "robo", "disparado_por", "agendamento__criado_por"
+            "robo__agente", "disparado_por", "agendamento__criado_por"
         ),
         pk=pk,
     )

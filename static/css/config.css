@@ -8,8 +8,17 @@
 .config-secao {
   background: var(--card-bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   padding: 1.25rem 1.5rem 1.5rem;
+  transition: border-color var(--transicao);
+}
+
+.config-secao:hover {
+  border-color: var(--border-strong);
+}
+
+.config-secao:target {
+  border-color: var(--accent-text);
 }
 
 .config-secao-cabecalho {
@@ -20,6 +29,11 @@
   font-size: 0.95rem;
   font-weight: 500;
   margin: 0 0 0.3rem;
+}
+
+.config-secao-cabecalho h2::before {
+  content: "# ";
+  color: var(--accent-text);
 }
 
 .config-secao-cabecalho h2 em {
@@ -67,8 +81,7 @@
 }
 
 .config-acao {
-  display: inline-block;
-  margin-top: 1rem;
+  margin-top: 1.25rem;
 }
 
 .grupo-form {
@@ -78,12 +91,9 @@
 }
 
 .grupo-form select {
+  width: auto;
+  min-width: 11rem;
   padding: 0.35rem 0.5rem;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text);
-  font-family: "IBM Plex Mono", monospace;
   font-size: 0.8rem;
 }
 
@@ -100,7 +110,8 @@
   margin: 0;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
+  background: rgba(19, 26, 38, 0.55);
   font-size: 0.8rem;
 }
 
@@ -183,7 +194,7 @@
   display: block;
   margin: 0 0 1rem;
   padding: 0.7rem 0.9rem;
-  background: var(--bg);
+  background: var(--bg-deep);
   border: 1px solid var(--border);
   border-radius: 4px;
   font-family: "IBM Plex Mono", monospace;
@@ -192,4 +203,15 @@
   word-break: break-all;
   white-space: pre-wrap;
   user-select: all;
+}
+
+.agente-nome-celula {
+  font-weight: 500;
+}
+
+@media (max-width: 900px) {
+  .registro-acesso li {
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
+  }
 }

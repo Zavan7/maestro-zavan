@@ -14,13 +14,25 @@
 
 {% block content %}
 <div class="page-header">
-  <h1>~/execucoes/{{ execucao.id }}</h1>
+  <div>
+    <h1>~/execucoes/{{ execucao.id }}</h1>
+    <p class="page-subtitle">{{ execucao.robo.nome }}</p>
+  </div>
+  <div class="page-acoes">
+    <span class="status-badge status-{{ execucao.status }} status-grande">{{ execucao.get_status_display }}</span>
+    <a href="{% url 'execution_list' %}" class="link-btn">← voltar para execuções</a>
+  </div>
 </div>
 
-<div class="execution-meta">
+<div class="execution-meta panel">
   <div>
     <span class="field-label">robô</span>
-    <p>{{ execucao.robo.nome }}</p>
+    <p>
+      {{ execucao.robo.nome }}
+      {% if execucao.robo.agente %}
+      <span class="tag tag-agente">{{ execucao.robo.agente.nome }}</span>
+      {% endif %}
+    </p>
   </div>
   <div>
     <span class="field-label">status</span>
@@ -68,15 +80,23 @@
   <span class="log-ao-vivo" id="log-estado">ao vivo</span>
   {% endif %}
 </h2>
-<ol class="log-output" id="log" start="{{ primeira_linha }}"
-  {% if ao_vivo %}
-  data-ws-url="/ws/execucoes/{{ execucao.id }}/"
-  data-ultima-linha="{{ ultima_linha }}"
-  {% endif %}>
-  {% for linha in linhas %}
-  <li class="{% if 'ERROR' in linha or 'Traceback' in linha %}log-erro{% endif %}">{{ linha }}</li>
-  {% empty %}
-  <li class="log-vazio">Nenhum log registrado ainda.</li>
-  {% endfor %}
-</ol>
+<div class="log-janela">
+  <div class="terminal-titlebar">
+    <span class="dot dot-red"></span>
+    <span class="dot dot-yellow"></span>
+    <span class="dot dot-green"></span>
+    <span class="terminal-path">tail -f execucao-{{ execucao.id }}.log</span>
+  </div>
+  <ol class="log-output" id="log" start="{{ primeira_linha }}"
+    {% if ao_vivo %}
+    data-ws-url="/ws/execucoes/{{ execucao.id }}/"
+    data-ultima-linha="{{ ultima_linha }}"
+    {% endif %}>
+    {% for linha in linhas %}
+    <li class="{% if 'ERROR' in linha or 'Traceback' in linha %}log-erro{% endif %}">{{ linha }}</li>
+    {% empty %}
+    <li class="log-vazio">Nenhum log registrado ainda.</li>
+    {% endfor %}
+  </ol>
+</div>
 {% endblock %}

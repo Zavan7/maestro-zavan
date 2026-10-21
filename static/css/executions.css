@@ -1,51 +1,81 @@
 .execution-meta {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
-  margin-bottom: 2rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.25rem 1.5rem;
+  padding: 1.25rem 1.5rem;
 }
 
 .execution-meta p {
   margin: 0.2rem 0 0;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
+}
+
+.status-grande {
+  padding: 0.35rem 0.85rem;
+  font-size: 0.8rem;
+}
+
+/* Log numa janela de terminal */
+.log-janela {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface);
 }
 
 .log-output {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
   margin: 0;
-  padding: 1rem 1rem 1rem 3.5rem;
-  max-height: 480px;
+  padding: 1rem 1rem 1rem 3.75rem;
+  max-height: 560px;
   overflow-y: auto;
   font-size: 0.8rem;
+  line-height: 1.55;
+  background: var(--bg-deep);
 }
 
 .log-output li {
   white-space: pre-wrap;
   word-break: break-word;
-  padding: 0.1rem 0;
+  padding: 0.05rem 0.4rem;
+  border-radius: 3px;
+}
+
+.log-output li:hover {
+  background: rgba(123, 147, 255, 0.05);
 }
 
 .log-output li::marker {
-  color: var(--text-muted);
+  color: #3c4758;
+  font-size: 0.75em;
 }
 
 .log-output .log-erro {
   color: var(--error);
   background: rgba(229, 72, 77, 0.08);
 }
+
+.log-output .log-salto,
+.log-output .log-vazio {
+  color: var(--text-muted);
+}
+
 .log-ao-vivo {
-  margin-left: 0.6rem;
-  font-size: 0.7rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.1rem 0.55rem;
+  border: 1px solid rgba(77, 174, 80, 0.4);
+  border-radius: 999px;
+  font-size: 0.68rem;
   font-weight: 400;
-  color: #4dae50;
+  color: var(--success);
 }
 
 .log-ao-vivo::before {
-  content: "● ";
-}
-
-.log-output .log-salto {
-  color: var(--text-muted);
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulsar 1.2s ease-in-out infinite;
 }

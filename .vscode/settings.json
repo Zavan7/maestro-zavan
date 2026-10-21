@@ -4,5 +4,6 @@
   },
   "[django-html]": {
     "editor.formatOnSave": false
-  }
+  },
+  "python.terminal.useEnvFile": true
 }

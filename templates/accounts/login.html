@@ -3,6 +3,8 @@
 <html lang="pt-br">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="{% static 'img/logo-mark.svg' %}" type="image/svg+xml" />
     <title>Login — Maestro</title>
     <link rel="stylesheet" href="{% static 'css/base.css' %}" />
     <link rel="stylesheet" href="{% static 'css/login.css' %}" />
@@ -27,11 +29,11 @@
 
         <form method="post">
           {% csrf_token %}
-          <label class="field-label">usuário</label>
+          <label class="field-label" for="{{ form.username.id_for_label }}">usuário</label>
           {{ form.username }}
-          <label class="field-label">senha</label>
+          <label class="field-label" for="{{ form.password.id_for_label }}">senha</label>
           {{ form.password }}
-          <button type="submit" class="btn">executar login</button>
+          <button type="submit" class="btn">executar login ↵</button>
         </form>
       </div>
     </div>

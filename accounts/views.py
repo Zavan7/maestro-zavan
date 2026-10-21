@@ -14,7 +14,8 @@ English:
     in Python loops, so the dashboard stays fast with many records.
 """
 
-from datetime import timedelta
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count
@@ -22,10 +23,26 @@ from django.db.models.functions import TruncDate
 from django.shortcuts import render
 from django.utils import timezone
 
+from agents.models import Agente
 from executions.models import Execucao
 from robots.models import Robo
 
 DIAS_ATIVIDADE = 14
+
+
+@dataclass(frozen=True, slots=True)
+class LinhaAgentePainel:
+    """Um agente no painel: nome, se está online e o último sinal.
+
+    English:
+        An agent on the dashboard: name, whether it is online and the
+        last signal.
+    """
+
+    nome: str
+    online: bool
+    ultimo_sinal: datetime | None
+    total_robos: int
 
 
 def _distribuicao_por_status():
@@ -140,6 +157,38 @@ def _atividade_recente():
     return atividade
 
 
+def _agentes_ativos() -> list[LinhaAgentePainel]:
+    """Lista os agentes ativos com a situação de cada um, online primeiro.
+
+    Uma consulta só: ``annotate`` conta os robôs de cada agente no banco.
+
+    Returns:
+        Linhas com nome, situação, último sinal e total de robôs.
+
+    English:
+        Lists active agents with each one's situation, online first.
+
+        A single query: ``annotate`` counts each agent's robots in the
+        database.
+
+        Returns:
+            Rows with name, situation, last signal and robot count.
+    """
+    agora = timezone.now()
+    linhas = [
+        LinhaAgentePainel(
+            nome=agente.nome,
+            online=agente.online(agora),
+            ultimo_sinal=agente.ultimo_sinal,
+            total_robos=agente.total_robos,
+        )
+        for agente in Agente.objects.filter(ativo=True).annotate(
+            total_robos=Count("robos")
+        )
+    ]
+    return sorted(linhas, key=lambda linha: not linha.online)
+
+
 @login_required
 def home(request):
     """Exibe o painel com robôs por status, atividade e últimas execuções.
@@ -175,6 +224,7 @@ def home(request):
         "total_robos": total_robos,
         "distribuicao": distribuicao,
         "atividade": _atividade_recente(),
+        "agentes": _agentes_ativos(),
         "execucoes_recentes": (
             Execucao.objects.select_related("robo", "disparado_por").order_by(
                 "-id"
