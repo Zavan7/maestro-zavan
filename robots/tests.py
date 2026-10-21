@@ -3,17 +3,24 @@
 English:
     Tests for the robots app: model, views and trigger service.
 """
+
+import sys
+import tempfile
+import time
+from pathlib import Path
 from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.db.models import ProtectedError
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 
+from config.models import ConfiguracaoSistema
 from executions.models import Execucao
+from robots.executor import Motivo, executar
 from robots.models import Robo
 from robots.services import DisparoRecusado, disparar_execucao
-from robots.tasks import executar_robo
+from robots.tasks import LogLimitado, executar_robo
 
 User = get_user_model()
 
@@ -168,12 +175,16 @@ class RobotViewsTest(TestCase):
             Editing via POST saves the new data to the database.
         """
         self.client.login(username="analista", password="senha123")
-        self.client.post(f"/robots/{self.robo.pk}/editar/", {
-            "nome": "robo-renomeado",
-            "caminho_script": self.robo.caminho_script,
-            "descricao": "",
-            "status": "ativo",
-        })
+        self.client.post(
+            f"/robots/{self.robo.pk}/editar/",
+            {
+                "nome": "robo-renomeado",
+                "caminho_script": self.robo.caminho_script,
+                "descricao": "",
+                "status": "ativo",
+                "max_tentativas": 0,
+            },
+        )
         self.robo.refresh_from_db()
         self.assertEqual(self.robo.nome, "robo-renomeado")
 
@@ -218,9 +229,7 @@ class RobotViewsTest(TestCase):
         self.client.post(f"/robots/{self.robo.pk}/iniciar/")
 
         self.assertFalse(
-            self.robo.execucoes.filter(
-                status=Execucao.Status.RODANDO
-            ).exists()
+            self.robo.execucoes.filter(status=Execucao.Status.RODANDO).exists()
         )
 
     def test_robot_start_sem_permissao_recebe_403(self):
@@ -335,11 +344,326 @@ class DisparoTest(TestCase):
         tarefa.delay.assert_called_once_with(execucao.id)
 
 
-class PararExecucaoTest(TestCase):
-    """Testes do botão "parar" e da reivindicação feita pela tarefa.
+def rodar_python(codigo, timeout=10, deve_parar=lambda: False):
+    """Roda um trecho de Python pelo executor e devolve resultado e linhas.
 
     English:
-        Tests for the "stop" button and the claim made by the task.
+        Runs a Python snippet through the executor and returns the result
+        and the lines.
+    """
+    linhas = []
+    resultado = executar(
+        [sys.executable, "-u", "-c", codigo],
+        cwd=Path.cwd(),
+        timeout_segundos=timeout,
+        deve_parar=deve_parar,
+        ao_receber_linha=linhas.append,
+        intervalo_verificacao=0.2,
+        espera_encerramento=1,
+    )
+    return resultado, linhas
+
+
+class ExecutorTest(TestCase):
+    """Testes do executor com processos reais, sem banco nem worker.
+
+    English:
+        Tests for the executor with real processes, no database or worker.
+    """
+
+    def test_entrega_as_linhas_e_o_codigo_de_saida(self):
+        """Saída padrão e de erro chegam como linhas, com o código de saída.
+
+        English:
+            Standard output and error arrive as lines, with the exit code.
+        """
+        resultado, linhas = rodar_python(
+            "import sys; print('um'); print('dois', file=sys.stderr); "
+            "sys.exit(3)"
+        )
+
+        self.assertEqual(resultado.motivo, Motivo.CONCLUIDO)
+        self.assertEqual(resultado.codigo_saida, 3)
+        self.assertEqual(linhas, ["um", "dois"])
+
+    def test_encerra_quando_o_tempo_esgota(self):
+        """Um processo que passa do tempo limite é encerrado.
+
+        English:
+            A process that goes past the timeout is stopped.
+        """
+        inicio = time.monotonic()
+
+        resultado, _ = rodar_python("import time; time.sleep(30)", timeout=1)
+
+        self.assertEqual(resultado.motivo, Motivo.TEMPO_ESGOTADO)
+        self.assertLess(time.monotonic() - inicio, 5)
+
+    def test_encerra_quando_pedem_para_parar(self):
+        """Quando deve_parar responde True, o processo é encerrado.
+
+        English:
+            When deve_parar answers True, the process is stopped.
+        """
+        resultado, linhas = rodar_python(
+            "import time\nprint('começou')\ntime.sleep(30)",
+            deve_parar=lambda: True,
+        )
+
+        self.assertEqual(resultado.motivo, Motivo.PARADO)
+        self.assertEqual(linhas, ["começou"])
+
+    def test_forca_o_encerramento_de_quem_ignora_o_pedido(self):
+        """Um processo que ignora o SIGTERM é encerrado à força.
+
+        English:
+            A process that ignores SIGTERM is killed.
+        """
+        resultado, _ = rodar_python(
+            "import signal, time; "
+            "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+            "print('pronto', flush=True); time.sleep(30)",
+            deve_parar=lambda: True,
+        )
+
+        self.assertEqual(resultado.motivo, Motivo.PARADO)
+        self.assertEqual(resultado.codigo_saida, -9)
+
+
+class LogLimitadoTest(TestCase):
+    """Testes do acumulador de log com limite de caracteres.
+
+    English:
+        Tests for the log accumulator with a character limit.
+    """
+
+    def test_guarda_o_fim_do_log(self):
+        """Passado o limite, ficam as linhas mais recentes.
+
+        English:
+            Past the limit, the most recent lines are kept.
+        """
+        log = LogLimitado(limite=10)
+        for linha in ["aaaa", "bbbb", "cccc"]:
+            log.adicionar(linha)
+
+        self.assertEqual(log.texto(), "bbbb\ncccc")
+
+
+@override_settings(ROBOS_SCRIPTS_DIR=tempfile.gettempdir())
+class ExecutarRoboTaskTest(TestCase):
+    """Testes da tarefa que roda o robô, com scripts reais temporários.
+
+    English:
+        Tests for the task that runs the robot, with real temporary
+        scripts.
+    """
+
+    def setUp(self):
+        """Cria a pasta de scripts temporária, um usuário e um robô.
+
+        English:
+            Creates the temporary scripts folder, a user and a robot.
+        """
+        self.pasta = tempfile.TemporaryDirectory(dir=tempfile.gettempdir())
+        self.addCleanup(self.pasta.cleanup)
+        self.usuario = User.objects.create_user(
+            username="operador", password="senha123"
+        )
+        self.robo = Robo.objects.create(
+            nome="robo-teste",
+            caminho_script=f"{Path(self.pasta.name).name}/robo.py",
+            responsavel=self.usuario,
+        )
+
+    def _script(self, codigo):
+        """Grava o script do robô com o código informado.
+
+        English:
+            Writes the robot's script with the given code.
+        """
+        Path(self.pasta.name, "robo.py").write_text(codigo)
+
+    def _rodar(self, **campos):
+        """Cria uma execução pendente, roda a tarefa e devolve a execução.
+
+        English:
+            Creates a pending execution, runs the task and returns the
+            execution.
+        """
+        execucao = Execucao.objects.create(robo=self.robo, **campos)
+        executar_robo(execucao.pk)
+        execucao.refresh_from_db()
+        return execucao
+
+    def test_sucesso_grava_o_log(self):
+        """Saída 0 vira sucesso, com o log e as datas preenchidos.
+
+        English:
+            Exit 0 becomes success, with the log and dates filled in.
+        """
+        self._script("print('etapa 1')\nprint('etapa 2')")
+
+        execucao = self._rodar()
+
+        self.assertEqual(execucao.status, Execucao.Status.SUCESSO)
+        self.assertEqual(execucao.log, "etapa 1\netapa 2")
+        self.assertIsNotNone(execucao.iniciado_em)
+        self.assertIsNotNone(execucao.finalizado_em)
+
+    def test_tempo_do_robo_esgotado_vira_falha(self):
+        """Passar do tempo do próprio robô vira falha, com o motivo no log.
+
+        English:
+            Going past the robot's own timeout becomes a failure, with the
+            reason in the log.
+        """
+        self.robo.timeout_segundos = 1
+        self.robo.save()
+        self._script("import time\ntime.sleep(30)")
+
+        execucao = self._rodar()
+
+        self.assertEqual(execucao.status, Execucao.Status.FALHA)
+        self.assertIn("excedeu o limite de 1s", execucao.log)
+
+    def test_robo_sem_tempo_usa_o_padrao(self):
+        """Sem tempo próprio, o robô usa o padrão da configuração.
+
+        English:
+            With no timeout of its own, the robot uses the settings default.
+        """
+        configuracao = ConfiguracaoSistema.atual()
+        configuracao.timeout_padrao_segundos = 42
+        configuracao.save()
+        self._script("print('ok')")
+
+        with mock.patch(
+            "robots.tasks.executar",
+            return_value=mock.Mock(motivo=Motivo.CONCLUIDO, codigo_saida=0),
+        ) as executar_falso:
+            self._rodar()
+
+        self.assertEqual(
+            executar_falso.call_args.kwargs["timeout_segundos"], 42
+        )
+
+    def test_parada_solicitada_cancela(self):
+        """Com a parada pedida, o processo é encerrado e vira cancelada.
+
+        English:
+            With a stop requested, the process is stopped and it becomes
+            cancelled.
+        """
+        self._script("import time\nprint('rodando')\ntime.sleep(30)")
+
+        execucao = self._rodar(parada_solicitada=True)
+
+        self.assertEqual(execucao.status, Execucao.Status.CANCELADA)
+        self.assertIn("parada pelo usuário", execucao.log)
+
+    def test_respeita_o_limite_do_log(self):
+        """O log guardado respeita o limite da configuração.
+
+        English:
+            The stored log respects the settings limit.
+        """
+        configuracao = ConfiguracaoSistema.atual()
+        configuracao.limite_log = 1_000
+        configuracao.save()
+        self._script("for i in range(500):\n    print(f'linha {i:04}')")
+
+        execucao = self._rodar()
+
+        self.assertLessEqual(len(execucao.log), 1_000)
+        self.assertTrue(execucao.log.endswith("linha 0499"))
+
+    def test_nao_roda_execucao_que_nao_esta_pendente(self):
+        """Uma execução já cancelada não é executada pela tarefa.
+
+        English:
+            An already cancelled execution is not run by the task.
+        """
+        execucao = Execucao.objects.create(
+            robo=self.robo, status=Execucao.Status.CANCELADA
+        )
+
+        with mock.patch("robots.tasks.executar") as executar_falso:
+            executar_robo(execucao.pk)
+
+        executar_falso.assert_not_called()
+
+    def test_falha_dispara_nova_tentativa(self):
+        """Com tentativas sobrando, a falha cria a próxima tentativa.
+
+        English:
+            With attempts left, a failure creates the next attempt.
+        """
+        self.robo.max_tentativas = 1
+        self.robo.save()
+        self._script("import sys\nsys.exit(1)")
+
+        with self.captureOnCommitCallbacks(execute=False) as enviadas:
+            primeira = self._rodar(disparado_por=self.usuario)
+
+        segunda = Execucao.objects.exclude(pk=primeira.pk).get()
+        self.assertEqual(primeira.status, Execucao.Status.FALHA)
+        self.assertEqual(segunda.tentativa, 2)
+        self.assertEqual(segunda.status, Execucao.Status.PENDENTE)
+        self.assertEqual(segunda.disparado_por, self.usuario)
+        self.assertEqual(len(enviadas), 1)
+
+    def test_ultima_tentativa_nao_repete(self):
+        """Esgotadas as tentativas, a falha não cria outra execução.
+
+        English:
+            Once the attempts run out, a failure creates no other
+            execution.
+        """
+        self.robo.max_tentativas = 1
+        self.robo.save()
+        self._script("import sys\nsys.exit(1)")
+
+        self._rodar(tentativa=2)
+
+        self.assertEqual(Execucao.objects.count(), 1)
+
+    def test_erro_de_configuracao_nao_repete(self):
+        """Script inexistente vira falha, sem nova tentativa.
+
+        English:
+            A missing script becomes a failure, with no new attempt.
+        """
+        self.robo.max_tentativas = 3
+        self.robo.caminho_script = "nao_existe.py"
+        self.robo.save()
+
+        execucao = self._rodar()
+
+        self.assertEqual(execucao.status, Execucao.Status.FALHA)
+        self.assertIn("Script não encontrado", execucao.log)
+        self.assertEqual(Execucao.objects.count(), 1)
+
+    def test_cancelada_nao_repete(self):
+        """Uma execução parada pelo usuário não ganha nova tentativa.
+
+        English:
+            An execution stopped by the user gets no new attempt.
+        """
+        self.robo.max_tentativas = 3
+        self.robo.save()
+        self._script("import time\ntime.sleep(30)")
+
+        self._rodar(parada_solicitada=True)
+
+        self.assertEqual(Execucao.objects.count(), 1)
+
+
+class PararExecucaoTest(TestCase):
+    """Testes do botão "parar".
+
+    English:
+        Tests for the "stop" button.
     """
 
     def setUp(self):
@@ -365,75 +689,57 @@ class PararExecucaoTest(TestCase):
         self.client.login(username="operador", password="senha123")
 
     def test_cancela_execucao_pendente(self):
-        """Uma execução pendente é cancelada como falha, com o motivo no log.
+        """Uma execução pendente é cancelada na hora, com o motivo no log.
 
         English:
-            A pending execution is cancelled as a failure, with the reason
-            in the log.
+            A pending execution is cancelled right away, with the reason in
+            the log.
         """
         execucao = Execucao.objects.create(robo=self.robo)
 
         response = self.client.post(self.url, follow=True)
 
         execucao.refresh_from_db()
-        self.assertEqual(execucao.status, Execucao.Status.FALHA)
+        self.assertEqual(execucao.status, Execucao.Status.CANCELADA)
         self.assertIsNotNone(execucao.finalizado_em)
         self.assertEqual(
             execucao.log, "Cancelada antes de iniciar por operador."
         )
         self.assertContains(response, "Execução pendente de &#x27;")
 
-    def test_tarefa_nao_roda_execucao_cancelada(self):
-        """Se a execução já não está pendente, a tarefa não roda o script.
+    def test_execucao_rodando_recebe_o_pedido_de_parada(self):
+        """Uma execução rodando só recebe o pedido; o status fica com a tarefa.
 
         English:
-            If the execution is no longer pending, the task does not run
-            the script.
-        """
-        execucao = Execucao.objects.create(robo=self.robo)
-        self.client.post(self.url)
-
-        with mock.patch("robots.tasks.subprocess.run") as rodar:
-            executar_robo(execucao.pk)
-
-        rodar.assert_not_called()
-        execucao.refresh_from_db()
-        self.assertEqual(execucao.status, Execucao.Status.FALHA)
-
-    def test_tarefa_reivindica_execucao_pendente(self):
-        """Uma execução pendente é reivindicada e o script roda.
-
-        English:
-            A pending execution is claimed and the script runs.
-        """
-        execucao = Execucao.objects.create(robo=self.robo)
-        concluido = mock.Mock(returncode=0, stdout="ok\n", stderr="")
-
-        with mock.patch(
-            "robots.tasks.subprocess.run", return_value=concluido
-        ) as rodar:
-            executar_robo(execucao.pk)
-
-        rodar.assert_called_once()
-        execucao.refresh_from_db()
-        self.assertEqual(execucao.status, Execucao.Status.SUCESSO)
-        self.assertIsNotNone(execucao.iniciado_em)
-
-    def test_marca_execucao_rodando_como_finalizada(self):
-        """Uma execução rodando é marcada como finalizada.
-
-        English:
-            A running execution is marked as finished.
+            A running execution only gets the request; the status is left
+            to the task.
         """
         execucao = Execucao.objects.create(
             robo=self.robo, status=Execucao.Status.RODANDO
         )
 
-        self.client.post(self.url)
+        response = self.client.post(self.url, follow=True)
 
         execucao.refresh_from_db()
-        self.assertEqual(execucao.status, Execucao.Status.SUCESSO)
-        self.assertIsNotNone(execucao.finalizado_em)
+        self.assertTrue(execucao.parada_solicitada)
+        self.assertEqual(execucao.status, Execucao.Status.RODANDO)
+        self.assertContains(response, "solicitada")
+
+    def test_lista_mostra_parando(self):
+        """Com a parada pedida, a lista de robôs mostra "parando".
+
+        English:
+            With a stop requested, the robot list shows "parando".
+        """
+        Execucao.objects.create(
+            robo=self.robo,
+            status=Execucao.Status.RODANDO,
+            parada_solicitada=True,
+        )
+
+        response = self.client.get("/robots/")
+
+        self.assertContains(response, "parando")
 
     def test_sem_execucao_em_andamento_mostra_erro(self):
         """Sem execução em andamento, a tela mostra uma mensagem de erro.

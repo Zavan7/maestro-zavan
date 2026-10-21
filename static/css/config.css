@@ -56,15 +56,6 @@
   margin-bottom: 0.8rem;
 }
 
-.config-secao-futura {
-  border-style: dashed;
-}
-
-.config-secao-futura input:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
 .config-campos input[type="number"] {
   appearance: textfield;
 }

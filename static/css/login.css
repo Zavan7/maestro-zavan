@@ -64,13 +64,3 @@ body.login-page {
 .terminal-body .btn {
   width: 100%;
 }
-
-.error-message {
-  color: var(--error);
-  font-size: 0.8rem;
-  margin-bottom: 1rem;
-}
-
-.error-message::before {
-  content: "✗ ";
-}

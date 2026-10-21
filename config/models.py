@@ -35,6 +35,16 @@ class ConfiguracaoSistema(models.Model):
         validators=[MinValueValidator(7), MaxValueValidator(3650)],
         help_text="Por quantos dias guardar execuções e logs.",
     )
+    timeout_padrao_segundos = models.PositiveIntegerField(
+        default=300,
+        validators=[MinValueValidator(10), MaxValueValidator(86_400)],
+        help_text="Tempo máximo de um robô que não define o próprio.",
+    )
+    limite_log = models.PositiveIntegerField(
+        default=10_000,
+        validators=[MinValueValidator(1_000), MaxValueValidator(1_000_000)],
+        help_text="Quantos caracteres do fim do log são guardados.",
+    )
     atualizado_em = models.DateTimeField(auto_now=True)
 
     class Meta:

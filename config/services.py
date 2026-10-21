@@ -24,7 +24,11 @@ from config.forms import NovoUsuarioForm
 from config.models import ConfiguracaoSistema, RegistroAcesso
 from executions.models import Execucao
 
-STATUS_FINALIZADOS = [Execucao.Status.SUCESSO, Execucao.Status.FALHA]
+STATUS_FINALIZADOS = [
+    Execucao.Status.SUCESSO,
+    Execucao.Status.FALHA,
+    Execucao.Status.CANCELADA,
+]
 
 
 class AlteracaoRecusada(Exception):
@@ -292,10 +296,11 @@ def limite_da_retencao(agora: datetime | None = None) -> datetime:
 def limpar_historico(agora: datetime | None = None) -> int:
     """Apaga as execuções finalizadas há mais tempo que a retenção.
 
-    Só entram execuções com ``sucesso`` ou ``falha`` e ``finalizado_em``
-    antes do limite. Execuções ``pendente`` ou ``rodando`` nunca são
-    apagadas, por mais antigas que sejam: ainda podem estar em uso pelo
-    worker. O log mora no próprio registro, então vai junto.
+    Só entram execuções finalizadas (``sucesso``, ``falha`` ou
+    ``cancelada``) com ``finalizado_em`` antes do limite. Execuções
+    ``pendente`` ou ``rodando`` nunca são apagadas, por mais antigas que
+    sejam: ainda podem estar em uso pelo worker. O log mora no próprio
+    registro, então vai junto.
 
     Args:
         agora: momento de referência; ``None`` usa a hora atual.
@@ -306,10 +311,11 @@ def limpar_historico(agora: datetime | None = None) -> int:
     English:
         Deletes executions finished longer ago than the retention period.
 
-        Only executions with ``sucesso`` or ``falha`` and ``finalizado_em``
-        before the limit are included. ``pendente`` or ``rodando``
-        executions are never deleted, however old: the worker may still be
-        using them. The log lives in the record itself, so it goes too.
+        Only finished executions (``sucesso``, ``falha`` or
+        ``cancelada``) with ``finalizado_em`` before the limit are
+        included. ``pendente`` or ``rodando`` executions are never
+        deleted, however old: the worker may still be using them. The log
+        lives in the record itself, so it goes too.
 
         Args:
             agora: reference moment; ``None`` uses the current time.

@@ -650,11 +650,12 @@ class RetencaoTest(TestCase):
         """
         antiga_ok = self._execucao(Execucao.Status.SUCESSO, 31)
         antiga_falha = self._execucao(Execucao.Status.FALHA, 90)
+        self._execucao(Execucao.Status.CANCELADA, 45)
         recente = self._execucao(Execucao.Status.SUCESSO, 29)
 
         apagadas = limpar_historico(agora=AGORA)
 
-        self.assertEqual(apagadas, 2)
+        self.assertEqual(apagadas, 3)
         restantes = set(Execucao.objects.values_list("pk", flat=True))
         self.assertEqual(restantes, {recente.pk})
         self.assertNotIn(antiga_ok.pk, restantes)
@@ -886,3 +887,95 @@ class CriarUsuarioTest(TestCase):
         self.client.logout()
 
         self.assertEqual(self.client.get(self.URL).status_code, 302)
+
+
+class LimitesPadraoTest(TestCase):
+    """Testes da edição dos limites padrão de execução.
+
+    English:
+        Tests for editing the default execution limits.
+    """
+
+    URL = "/configuracoes/limites/"
+
+    def setUp(self):
+        """Cria um administrador do sistema e um operador.
+
+        English:
+            Creates a system administrator and an operator.
+        """
+        self.admin = User.objects.create_user(
+            username="admin_sistema", password="senha123"
+        )
+        self.admin.groups.add(
+            Group.objects.get(name="Administrador do sistema")
+        )
+        operador = User.objects.create_user(
+            username="operador", password="senha123"
+        )
+        operador.groups.add(Group.objects.get(name="Operador"))
+
+    def test_salva_os_limites(self):
+        """Valores válidos são salvos e confirmados com mensagem.
+
+        English:
+            Valid values are saved and confirmed with a message.
+        """
+        self.client.login(username="admin_sistema", password="senha123")
+
+        with patch_status_do_sistema():
+            response = self.client.post(
+                self.URL,
+                {"timeout_padrao_segundos": 600, "limite_log": 20_000},
+                follow=True,
+            )
+
+        configuracao = ConfiguracaoSistema.atual()
+        self.assertEqual(configuracao.timeout_padrao_segundos, 600)
+        self.assertEqual(configuracao.limite_log, 20_000)
+        self.assertContains(response, "Limites padrão salvos.")
+
+    def test_valor_fora_do_limite_mostra_erro(self):
+        """Um tempo abaixo do mínimo não é salvo e a aba mostra o erro.
+
+        English:
+            A time below the minimum is not saved and the tab shows the
+            error.
+        """
+        self.client.login(username="admin_sistema", password="senha123")
+
+        with patch_status_do_sistema():
+            response = self.client.post(
+                self.URL,
+                {"timeout_padrao_segundos": 1, "limite_log": 20_000},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Limites não salvos")
+        self.assertEqual(
+            ConfiguracaoSistema.atual().timeout_padrao_segundos, 300
+        )
+
+    def test_operador_recebe_403(self):
+        """Sem gerenciar_limites, salvar os limites responde 403.
+
+        English:
+            Without gerenciar_limites, saving the limits answers 403.
+        """
+        self.client.login(username="operador", password="senha123")
+
+        response = self.client.post(
+            self.URL, {"timeout_padrao_segundos": 600, "limite_log": 20_000}
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_deslogado_vai_para_o_login(self):
+        """Quem não está logado é redirecionado para o login.
+
+        English:
+            Anyone not logged in is redirected to the login page.
+        """
+        response = self.client.post(self.URL, {})
+
+        self.assertEqual(response.status_code, 302)

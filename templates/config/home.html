@@ -76,18 +76,22 @@
   {% endif %}
 
   {% if perms.config.gerenciar_limites %}
-  <section class="config-secao config-secao-futura" id="limites">
+  <section class="config-secao" id="limites">
     <header class="config-secao-cabecalho">
-      <h2>limites padrão de execução <em>em breve</em></h2>
-      <p>Valores usados quando o robô não define os próprios.</p>
+      <h2>limites padrão de execução</h2>
+      <p>Valem a partir da próxima execução. O tempo máximo é usado quando o robô não define o próprio.</p>
     </header>
-    <div class="config-campos">
-      <label class="field-label" for="timeout-padrao">tempo máximo por execução (segundos)</label>
-      <input id="timeout-padrao" type="number" value="{{ timeout_padrao }}" disabled />
-
-      <label class="field-label" for="limite-log">tamanho máximo do log (caracteres)</label>
-      <input id="limite-log" type="number" value="{{ limite_log }}" disabled />
-    </div>
+    <form method="post" action="{% url 'config_limits' %}" class="config-campos">
+      {% csrf_token %}
+      {% for campo in form_limites %}
+      <label class="field-label" for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+      {{ campo }}
+      {% if campo.errors %}
+      <p class="error-message">{{ campo.errors.0 }}</p>
+      {% endif %}
+      {% endfor %}
+      <button type="submit" class="btn config-acao">salvar</button>
+    </form>
   </section>
   {% endif %}
 </div>
