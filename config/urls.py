@@ -3,13 +3,18 @@
 English:
     Routes for the settings app.
 """
+
 from django.urls import path
 
 from config import views
 
 urlpatterns = [
     path("", views.config_home, name="config_home"),
+    path("retencao/", views.config_retention, name="config_retention"),
     path("usuarios/", views.config_users, name="config_users"),
+    path(
+        "usuarios/novo/", views.config_user_create, name="config_user_create"
+    ),
     path(
         "usuarios/<int:pk>/grupo/",
         views.config_user_group,
