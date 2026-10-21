@@ -3,6 +3,7 @@
 English:
     Routes for the executions app.
 """
+
 from django.urls import path
 
 from executions import views

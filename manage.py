@@ -12,6 +12,7 @@ English:
     the migrations (``makemigrations`` and ``migrate``) and any other
     Django command.
 """
+
 import os
 import sys
 

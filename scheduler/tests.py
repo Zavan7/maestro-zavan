@@ -3,6 +3,7 @@
 English:
     Tests for the schedules app: model, task and views.
 """
+
 from datetime import datetime, time
 from unittest import mock
 
@@ -67,9 +68,7 @@ class AgendamentoModelTest(TestCase):
         English:
             A schedule with no day checked is invalid.
         """
-        agendamento = Agendamento(
-            robo=self.robo, horario=time(8, 0), **dias()
-        )
+        agendamento = Agendamento(robo=self.robo, horario=time(8, 0), **dias())
 
         with self.assertRaises(ValidationError):
             agendamento.full_clean()
@@ -179,9 +178,7 @@ class AgendamentoModelTest(TestCase):
         sexta = timezone.make_aware(datetime(2026, 10, 2, 8, 0))
 
         self.assertEqual(formatar_proxima(hoje, SEGUNDA_7H), "hoje 08:00")
-        self.assertEqual(
-            formatar_proxima(amanha, SEGUNDA_7H), "amanhã 08:00"
-        )
+        self.assertEqual(formatar_proxima(amanha, SEGUNDA_7H), "amanhã 08:00")
         self.assertEqual(formatar_proxima(sexta, SEGUNDA_7H), "sex 08:00")
 
 
@@ -356,12 +353,15 @@ class ScheduleViewsTest(TestCase):
             Creating records the logged-in user as the creator.
         """
         self.client.login(username="admin_rpa", password="senha123")
-        self.client.post("/agendamentos/novo/", {
-            "robo": self.robo.pk,
-            "horario": "14:30",
-            "segunda": "on",
-            "ativo": "on",
-        })
+        self.client.post(
+            "/agendamentos/novo/",
+            {
+                "robo": self.robo.pk,
+                "horario": "14:30",
+                "segunda": "on",
+                "ativo": "on",
+            },
+        )
 
         criado = Agendamento.objects.get(horario=time(14, 30))
         self.assertEqual(criado.criado_por, self.admin_rpa)

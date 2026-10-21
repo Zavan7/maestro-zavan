@@ -3,6 +3,7 @@
 English:
     Forms for the schedules app.
 """
+
 from django import forms
 
 from robots.models import Robo
@@ -43,9 +44,7 @@ class AgendamentoForm(forms.ModelForm):
         fields = ["robo", "horario", *DIAS_DA_SEMANA, "ativo"]
         labels = {"robo": "robô", "horario": "horário", **ROTULOS_CURTOS}
         widgets = {
-            "horario": forms.TimeInput(
-                attrs={"type": "time"}, format="%H:%M"
-            ),
+            "horario": forms.TimeInput(attrs={"type": "time"}, format="%H:%M"),
         }
 
     def __init__(self, *args, **kwargs):

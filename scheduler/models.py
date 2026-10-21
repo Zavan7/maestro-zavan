@@ -11,9 +11,11 @@ English:
     Sunday = 6). That is why ``DIAS_DA_SEMANA[date.weekday()]`` returns
     the name of that day's boolean field.
 """
+
 from datetime import datetime, timedelta
 
 from django.conf import settings
+from django.contrib import admin
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
@@ -21,7 +23,13 @@ from django.utils import timezone
 from robots.models import Robo
 
 DIAS_DA_SEMANA = (
-    "segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"
+    "segunda",
+    "terca",
+    "quarta",
+    "quinta",
+    "sexta",
+    "sabado",
+    "domingo",
 )
 
 ROTULOS_CURTOS = {
@@ -191,6 +199,7 @@ class Agendamento(models.Model):
         self.horario = self.horario.replace(second=0, microsecond=0)
         super().save(*args, **kwargs)
 
+    @admin.display(description="dias")
     def dias_formatados(self):
         """Resume os dias marcados em texto curto.
 
@@ -206,17 +215,13 @@ class Agendamento(models.Model):
                 short list, such as ``seg, sáb``.
         """
         ativos = [
-            ROTULOS_CURTOS[dia]
-            for dia in DIAS_DA_SEMANA
-            if getattr(self, dia)
+            ROTULOS_CURTOS[dia] for dia in DIAS_DA_SEMANA if getattr(self, dia)
         ]
         if len(ativos) == 7:
             return "todos os dias"
         if ativos == ["seg", "ter", "qua", "qui", "sex"]:
             return "dias úteis"
         return ", ".join(ativos)
-
-    dias_formatados.short_description = "dias"
 
     def proxima_ocorrencia(self, agora=None):
         """Calcula quando será o próximo disparo a partir de ``agora``.

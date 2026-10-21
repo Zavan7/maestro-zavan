@@ -3,6 +3,7 @@
 English:
     Admin for the executions app.
 """
+
 from django.contrib import admin
 
 from executions.models import Execucao
@@ -17,6 +18,10 @@ class ExecucaoAdmin(admin.ModelAdmin):
     """
 
     list_display = (
-        "robo", "status", "disparado_por", "iniciado_em", "finalizado_em"
+        "robo",
+        "status",
+        "disparado_por",
+        "iniciado_em",
+        "finalizado_em",
     )
     list_filter = ("status",)

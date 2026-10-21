@@ -3,6 +3,7 @@
 English:
     Configuration for the schedules app.
 """
+
 from django.apps import AppConfig
 
 

@@ -11,6 +11,7 @@ English:
     Django. That way, the ``@shared_task`` decorator used in the apps
     finds the right Celery application as soon as the project starts.
 """
+
 from .celery import app as celery_app
 
 __all__ = ("celery_app",)

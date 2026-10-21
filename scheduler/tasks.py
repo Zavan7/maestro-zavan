@@ -3,6 +3,7 @@
 English:
     Celery tasks for the schedules app.
 """
+
 import logging
 
 from celery import shared_task

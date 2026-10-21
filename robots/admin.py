@@ -3,6 +3,7 @@
 English:
     Admin for the robots app.
 """
+
 from django.contrib import admin
 
 from robots.models import Robo

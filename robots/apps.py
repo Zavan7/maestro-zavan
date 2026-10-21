@@ -3,6 +3,7 @@
 English:
     Configuration for the robots app.
 """
+
 from django.apps import AppConfig
 
 

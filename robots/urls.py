@@ -10,6 +10,7 @@ English:
     and in views with ``redirect``. That way, if the URL changes,
     nothing else has to change.
 """
+
 from django.urls import path
 
 from robots import views

@@ -13,6 +13,7 @@ English:
     counting is done by the database (``annotate`` and ``Count``), not
     in Python loops, so the dashboard stays fast with many records.
 """
+
 from datetime import timedelta
 
 from django.contrib.auth.decorators import login_required
@@ -123,15 +124,15 @@ def _atividade_recente():
     for deslocamento in range(DIAS_ATIVIDADE):
         dia = inicio + timedelta(days=deslocamento)
         contagem = por_dia.get(dia, {})
-        atividade.append({
-            "dia": dia,
-            "sucesso": contagem.get(Execucao.Status.SUCESSO, 0),
-            "falha": contagem.get(Execucao.Status.FALHA, 0),
-        })
+        atividade.append(
+            {
+                "dia": dia,
+                "sucesso": contagem.get(Execucao.Status.SUCESSO, 0),
+                "falha": contagem.get(Execucao.Status.FALHA, 0),
+            }
+        )
 
-    maior = max(
-        (d["sucesso"] + d["falha"] for d in atividade), default=0
-    ) or 1
+    maior = max((d["sucesso"] + d["falha"] for d in atividade), default=0) or 1
     for d in atividade:
         d["altura_sucesso"] = d["sucesso"] / maior * 100
         d["altura_falha"] = d["falha"] / maior * 100
@@ -175,9 +176,9 @@ def home(request):
         "distribuicao": distribuicao,
         "atividade": _atividade_recente(),
         "execucoes_recentes": (
-            Execucao.objects.select_related(
-                "robo", "disparado_por"
-            ).order_by("-id")[:12]
+            Execucao.objects.select_related("robo", "disparado_por").order_by(
+                "-id"
+            )[:12]
         ),
     }
     return render(request, "accounts/home.html", contexto)

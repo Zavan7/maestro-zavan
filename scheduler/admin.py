@@ -3,6 +3,7 @@
 English:
     Admin for the schedules app.
 """
+
 from django.contrib import admin
 
 from scheduler.models import Agendamento
@@ -23,7 +24,11 @@ class AgendamentoAdmin(admin.ModelAdmin):
     """
 
     list_display = (
-        "robo", "horario", "dias_formatados", "ativo", "ultimo_disparo"
+        "robo",
+        "horario",
+        "dias_formatados",
+        "ativo",
+        "ultimo_disparo",
     )
     list_filter = ("ativo",)
     readonly_fields = ("ultimo_disparo", "criado_em")

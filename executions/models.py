@@ -3,6 +3,7 @@
 English:
     Models for the executions app.
 """
+
 from django.conf import settings
 from django.db import models
 
@@ -141,9 +142,7 @@ class Execucao(models.Model):
         if not (self.iniciado_em and self.finalizado_em):
             return ""
 
-        segundos = int(
-            (self.finalizado_em - self.iniciado_em).total_seconds()
-        )
+        segundos = int((self.finalizado_em - self.iniciado_em).total_seconds())
         minutos, segundos = divmod(segundos, 60)
         horas, minutos = divmod(minutos, 60)
 

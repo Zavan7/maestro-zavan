@@ -3,6 +3,7 @@
 English:
     Configuration for the executions app.
 """
+
 from django.apps import AppConfig
 
 
