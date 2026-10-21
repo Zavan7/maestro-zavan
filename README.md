@@ -6,7 +6,7 @@ Primeiro produto da **ZV Labs**.
 
 > **Sobre o projeto:** o Maestro é desenvolvido como projeto de estudo, dentro de uma trilha de aprendizado em Python, RPA e desenvolvimento web. Apesar disso, é documentado, testado e versionado como um projeto real, e este README descreve o sistema e o seu andamento, não o conteúdo de estudo.
 
-**Versão atual:** 1.0.0, com o agendamento e a aba de configurações completa já prontos para a próxima versão. Veja o [CHANGELOG](CHANGELOG.md).
+**Versão atual:** 1.1.0. Veja o [CHANGELOG](CHANGELOG.md).
 
 ---
 
@@ -169,17 +169,27 @@ cd maestro-zavan
 uv sync
 ```
 
-Crie um arquivo `.env` na raiz:
+Crie o `.env` a partir do exemplo e ajuste os valores:
+
+```bash
+cp .env.example .env
+```
 
 ```
-SECRET_KEY=gere-uma-chave-nova
+SECRET_KEY=
 DEBUG=True
 ALLOWED_HOSTS=localhost,127.0.0.1
 CELERY_BROKER_URL=redis://localhost:6379/0
-ROBOS_SCRIPTS_DIR=/caminho/absoluto/para/scripts
+# ROBOS_SCRIPTS_DIR=/caminho/absoluto/para/scripts
 ```
 
 `ROBOS_SCRIPTS_DIR` é opcional. Sem ele, o Maestro usa a pasta `scripts/` do projeto.
+
+Com `DEBUG=True`, ou rodando `manage.py test`, uma `SECRET_KEY` vazia é trocada por uma chave fixa de desenvolvimento, então um clone novo roda os testes sem `.env`. Fora disso, sem `SECRET_KEY` o Maestro não sobe e avisa o motivo. Para gerar uma chave:
+
+```bash
+uv run python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+```
 
 Prepare o banco:
 
@@ -404,6 +414,7 @@ uv run manage.py test
 | `RoboModelTest` | criação, status padrão, exibição do status, regra `PROTECT` no responsável |
 | `RobotViewsTest` | acesso sem login, listagem, edição, exclusão com e sem execuções, robô em manutenção, 403 sem `executar_robo` |
 | `DisparoTest` | regras do disparo e envio da tarefa só depois do commit |
+| `PararExecucaoTest` | cancelamento de execução pendente, tarefa que não roda execução cancelada, reivindicação pela tarefa, execução rodando, sem execução e 403 |
 | `ExecucaoModelTest` | criação, status padrão, regras `PROTECT` e `SET_NULL` |
 | `ExecutionViewsTest` | acesso sem login, listagem, detalhe com log, 404 para execução inexistente |
 | `AgendamentoModelTest` | validação dos dias, segundos zerados, próxima ocorrência e seus casos de borda |
@@ -445,13 +456,13 @@ O acompanhamento diário é feito no [Trello do projeto](https://trello.com/b/B9
 
 Cadastro de robôs, execução em segundo plano, histórico com log, permissões e painel. Detalhes no [CHANGELOG](CHANGELOG.md).
 
-### Pronto para a próxima versão
+### Versão 1.1 (lançada)
 
 - Agendamento recorrente, com estados visuais e origem das execuções
 - Aba de configurações: gestão e criação de usuários com registro de alterações, status do sistema e retenção do histórico com limpeza automática
 - Permissão própria para iniciar e parar robôs, e grupos criados por migração
 
-### Versão 1.1: robustez e tempo real
+### Versão 1.2: robustez e tempo real
 
 - Tempo limite e número de tentativas configuráveis por robô
 - Botão "parar" que encerra o processo de verdade
@@ -471,7 +482,8 @@ Cadastro de robôs, execução em segundo plano, histórico com log, permissões
 
 | Item | Descrição | Prioridade |
 |---|---|---|
-| Parar execução | `robot_stop` marca a execução como finalizada, mas o processo continua no worker; será resolvido pelo executor da 1.1 e pelo agente | Média |
+| Parar execução | para uma execução rodando, `robot_stop` marca a execução como finalizada, mas o processo continua no worker; será resolvido pelo executor da 1.2 e pelo agente (execuções pendentes já são canceladas de verdade) | Média |
+| Tipos no código antigo | `robots/views.py` e outros arquivos anteriores à convenção de type hints ainda penduram atributos em models e não passam no `mypy`; adequação num commit de estilo próprio | Baixa |
 | Estilos inline | as barras do painel usam `style` inline, o que vai conflitar com uma política de CSP rígida | Baixa |
 
 ---

@@ -16,8 +16,10 @@ English:
 """
 
 import os
+import sys
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -25,7 +27,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 
-def env_bool(nome, padrao="False"):
+def env_bool(nome: str, padrao: str = "False") -> bool:
     """Lê uma variável de ambiente e a converte em booleano.
 
     Variáveis de ambiente são sempre texto, então ``DEBUG=False`` chega
@@ -59,7 +61,7 @@ def env_bool(nome, padrao="False"):
     return os.getenv(nome, padrao).strip().lower() in ("true", "1")
 
 
-def env_lista(nome, padrao=""):
+def env_lista(nome: str, padrao: str = "") -> list[str]:
     """Lê uma variável de ambiente separada por vírgulas como lista.
 
     Útil para ``ALLOWED_HOSTS``: ``"localhost, 127.0.0.1,"`` vira
@@ -96,9 +98,60 @@ def env_lista(nome, padrao=""):
     ]
 
 
+def ler_secret_key(debug: bool, executando_testes: bool) -> str:
+    """Lê a ``SECRET_KEY`` do ambiente, com uma chave fixa só para dev.
+
+    Em desenvolvimento (``DEBUG`` ligado) e nos testes, uma chave fixa e
+    pública basta: ela não protege nada real, e assim um clone novo roda
+    ``manage.py test`` sem precisar de ``.env``. Fora disso, a falta da
+    chave é um erro de configuração e o Maestro nem sobe, em vez de
+    falhar mais tarde, na primeira sessão ou mensagem assinada.
+
+    Args:
+        debug: valor de ``DEBUG`` já lido do ambiente.
+        executando_testes: se o comando atual é ``manage.py test``.
+
+    Returns:
+        A chave do ambiente ou, em dev e testes, a chave fixa.
+
+    Raises:
+        ImproperlyConfigured: se a chave falta fora de dev e testes.
+
+    English:
+        Reads ``SECRET_KEY`` from the environment, with a fixed dev key.
+
+        In development (``DEBUG`` on) and in tests, a fixed public key is
+        enough: it protects nothing real, and a fresh clone can run
+        ``manage.py test`` without a ``.env``. Otherwise, a missing key is
+        a configuration error and Maestro does not even start, instead of
+        failing later, on the first session or signed message.
+
+        Args:
+            debug: ``DEBUG`` value already read from the environment.
+            executando_testes: whether the current command is
+                ``manage.py test``.
+
+        Returns:
+            The key from the environment or, in dev and tests, the fixed
+            key.
+
+        Raises:
+            ImproperlyConfigured: if the key is missing outside dev and
+                tests.
+    """
+    chave = os.getenv("SECRET_KEY", "").strip()
+    if chave:
+        return chave
+    if debug or executando_testes:
+        return "django-insecure-chave-fixa-so-para-desenvolvimento"
+    raise ImproperlyConfigured(
+        "Defina SECRET_KEY no .env (veja o .env.example)."
+    )
+
+
 # Segurança
-SECRET_KEY = os.getenv("SECRET_KEY")
 DEBUG = env_bool("DEBUG")
+SECRET_KEY = ler_secret_key(DEBUG, executando_testes=sys.argv[1:2] == ["test"])
 ALLOWED_HOSTS = env_lista("ALLOWED_HOSTS")
 
 

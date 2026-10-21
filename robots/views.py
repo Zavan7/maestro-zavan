@@ -17,9 +17,11 @@ English:
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db.models import Prefetch, ProtectedError
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
+from accounts.tipos import RequisicaoAutenticada
 from executions.models import Execucao
 from robots.forms import RoboForm
 from robots.models import Robo
@@ -348,12 +350,16 @@ def robot_start(request, pk):
 
 
 @permission_required("robots.executar_robo", raise_exception=True)
-def robot_stop(request, pk):
-    """Marca como finalizada a execução que está rodando.
+def robot_stop(request: RequisicaoAutenticada, pk: int) -> HttpResponse:
+    """Encerra no registro a execução em andamento do robô.
 
-    Hoje a parada é só no registro: o processo do script não é
-    interrompido. Quando o agente em Go existir, esta view vai mandar o
-    comando de parada por WebSocket (veja o ``TODO`` no código).
+    - Execução ``PENDENTE`` (ainda na fila, por exemplo com o worker
+      parado) é cancelada: vira ``FALHA`` com o motivo no log. Como a
+      tarefa só roda o script se a execução ainda estiver pendente, o
+      worker não a executa depois.
+    - Execução ``RODANDO`` só é marcada como finalizada: o processo do
+      script não é interrompido. A parada de verdade vem com o executor
+      próprio e com o agente em Go (veja o ``TODO`` no código).
 
     Args:
         request: requisição HTTP; exige a permissão
@@ -364,11 +370,16 @@ def robot_stop(request, pk):
         Sempre redireciona para a lista de robôs.
 
     English:
-        Marks the running execution as finished.
+        Ends, in the record, the robot's execution in progress.
 
-        Today stopping only updates the record: the script process is not
-        interrupted. Once the Go agent exists, this view will send the stop
-        command over WebSocket (see the ``TODO`` in the code).
+        - A ``PENDENTE`` execution (still queued, e.g. with the worker
+          down) is cancelled: it becomes ``FALHA`` with the reason in the
+          log. Since the task only runs the script if the execution is
+          still pending, the worker does not run it later.
+        - A ``RODANDO`` execution is only marked as finished: the script
+          process is not interrupted. Real stopping comes with the
+          dedicated executor and the Go agent (see the ``TODO`` in the
+          code).
 
         Args:
             request: HTTP request; requires the ``robots.executar_robo``
@@ -380,17 +391,33 @@ def robot_stop(request, pk):
     """
     robo = get_object_or_404(Robo, pk=pk)
 
-    if request.method == "POST":
-        execucao = robo.execucoes.filter(
-            status=Execucao.Status.RODANDO
-        ).last()
+    if request.method != "POST":
+        return redirect("robot_list")
 
-        if execucao:
-            # TODO: com o agente Go, aqui o Django manda o comando de parada
-            # via WebSocket e o agente encerra o processo de verdade.
-            # Por enquanto, só marca o registro como finalizado.
-            execucao.status = Execucao.Status.SUCESSO
-            execucao.finalizado_em = timezone.now()
-            execucao.save()
+    execucao = robo.execucoes.filter(
+        status__in=[Execucao.Status.PENDENTE, Execucao.Status.RODANDO]
+    ).last()
+    if execucao is None:
+        messages.error(
+            request, f"'{robo.nome}' não tem execução em andamento."
+        )
+    elif execucao.status == Execucao.Status.PENDENTE:
+        execucao.status = Execucao.Status.FALHA
+        execucao.finalizado_em = timezone.now()
+        execucao.log = (
+            f"Cancelada antes de iniciar por {request.user.username}."
+        )
+        execucao.save(update_fields=["status", "finalizado_em", "log"])
+        messages.success(
+            request, f"Execução pendente de '{robo.nome}' cancelada."
+        )
+    else:
+        # TODO: com o executor próprio e o agente Go, aqui a parada é
+        # pedida de verdade e o processo é encerrado.
+        # Por enquanto, só marca o registro como finalizado.
+        execucao.status = Execucao.Status.SUCESSO
+        execucao.finalizado_em = timezone.now()
+        execucao.save(update_fields=["status", "finalizado_em"])
+        messages.success(request, f"Execução de '{robo.nome}' parada.")
 
     return redirect("robot_list")
