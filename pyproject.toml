@@ -6,6 +6,9 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "celery>=5.6.3",
+    "channels>=4.3.2",
+    "channels-redis>=4.3.0",
+    "daphne>=4.2.3",
     "django>=6.1",
     "dotenv>=0.9.9",
     "redis>=8.1.0",
@@ -13,7 +16,11 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "celery-types>=0.26.0",
     "django-stubs>=6.1.1",
+    "mypy>=2.4.0",
+    "ruff>=0.17.1",
+    "types-channels>=4.3.0.20260518",
 ]
 
 [tool.ruff]

@@ -151,18 +151,23 @@ def ler_secret_key(debug: bool, executando_testes: bool) -> str:
 
 # Segurança
 DEBUG = env_bool("DEBUG")
-SECRET_KEY = ler_secret_key(DEBUG, executando_testes=sys.argv[1:2] == ["test"])
+EXECUTANDO_TESTES = sys.argv[1:2] == ["test"]
+SECRET_KEY = ler_secret_key(DEBUG, executando_testes=EXECUTANDO_TESTES)
 ALLOWED_HOSTS = env_lista("ALLOWED_HOSTS")
 
 
 # Aplicações
+# O daphne vem primeiro para o runserver dele substituir o do Django e
+# atender HTTP e WebSocket.
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "channels",
     "accounts",
     "executions",
     "robots",
@@ -201,10 +206,19 @@ WSGI_APPLICATION = "maestro.wsgi.application"
 
 
 # Banco de dados
+# Com o log ao vivo, o worker grava enquanto a tela lê. No SQLite, o modo
+# WAL deixa leitura e escrita acontecerem juntas, e o timeout faz quem
+# encontrar o banco ocupado esperar em vez de falhar com "database is
+# locked". Em produção, o caminho é o PostgreSQL.
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",
+        "OPTIONS": {
+            "timeout": 20,
+            "init_command": "PRAGMA journal_mode=WAL;",
+            "transaction_mode": "IMMEDIATE",
+        },
     }
 }
 
@@ -265,3 +279,32 @@ ROBOS_SCRIPTS_DIR = Path(
     os.getenv("ROBOS_SCRIPTS_DIR", BASE_DIR / "scripts")
 )
 CELERY_TIMEZONE = TIME_ZONE
+
+
+# Django Channels: WebSocket do log ao vivo
+# O Redis do Channels usa o banco 1, separado da fila do Celery (banco 0).
+# Nos testes, a camada em memória dispensa o Redis.
+ASGI_APPLICATION = "maestro.asgi.application"
+CHANNELS_REDIS_URL = os.getenv("CHANNELS_REDIS_URL", "redis://localhost:6379/1")
+# O redis-py 8 passou a usar 5 s de tempo limite de leitura por padrão, e
+# o channels_redis espera por mensagens com BZPOPMIN de até 5 s: a leitura
+# estourava no limite e derrubava as conexões com "Timeout reading from".
+# O tempo limite da leitura precisa ser maior que essa espera.
+CHANNELS_REDIS_SOCKET_TIMEOUT = 30
+CHANNEL_LAYERS = {
+    "default": (
+        {"BACKEND": "channels.layers.InMemoryChannelLayer"}
+        if EXECUTANDO_TESTES
+        else {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [
+                    {
+                        "address": CHANNELS_REDIS_URL,
+                        "socket_timeout": CHANNELS_REDIS_SOCKET_TIMEOUT,
+                    }
+                ]
+            },
+        }
+    )
+}

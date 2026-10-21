@@ -45,7 +45,7 @@ Primeiro produto da **ZV Labs**.
 - Agendamento recorrente por horário e dias da semana, com pausar e retomar
 - Estados visuais nas listas: rodando, agendado, pausado e parado, e a próxima execução de cada robô
 - Histórico global de execuções, com a origem de cada uma (manual ou agendamento), e tela de detalhe com duração, log numerado e linhas de erro destacadas
-- Atualização automática da tela de detalhe enquanto a execução está em andamento
+- Log ao vivo na tela de detalhe, linha a linha, pelo WebSocket (Django Channels)
 - Controle de acesso por grupos (Operador, Administrador RPA e Administrador do sistema)
 - Aba de configurações com gestão de usuários: criação, troca de grupo, desativação e reativação, com registro de todas as alterações
 - Status do sistema na aba de configurações: Redis, worker e agendador
@@ -54,7 +54,7 @@ Primeiro produto da **ZV Labs**.
 
 **Planejado**
 
-- Log ao vivo na tela de detalhe e alertas de falha, tempo esgotado e atraso
+- Alertas de falha, tempo esgotado e atraso
 - Agente em Go para executar robôs em outras máquinas, conectado ao Maestro por WebSocket
 - API REST
 
@@ -71,11 +71,13 @@ flowchart LR
     R --> W[Worker Celery]
     W -->|subprocess| S[Script do robô<br/>ROBOS_SCRIPTS_DIR]
     W -->|status e log| DB
+    W -->|linhas do log| C[(Redis<br/>Channels)]
+    C -->|WebSocket| N[Navegador]
     D -. WebSocket, planejado .-> A[Agente Go]
     A -. executa .-> S2[Robô na máquina remota]
 ```
 
-Quando um robô é iniciado, pelo botão ou por um agendamento, o disparo passa por uma única função, `disparar_execucao`, que aplica as regras, cria uma `Execucao` com status `pendente` e envia uma task para o Redis. O worker do Celery pega a task, executa o script do robô e grava o status final e o log no banco.
+Quando um robô é iniciado, pelo botão ou por um agendamento, o disparo passa por uma única função, `disparar_execucao`, que aplica as regras, cria uma `Execucao` com status `pendente` e envia uma task para o Redis. O worker do Celery pega a task, executa o script do robô e grava o status final e o log no banco. Enquanto o robô roda, o worker publica as linhas do log no Django Channels, que as entrega por WebSocket a quem está com a tela de detalhe aberta.
 
 A cada minuto, o beat do Celery envia a tarefa que verifica os agendamentos vencidos e os dispara pelo mesmo caminho, e a tarefa que grava o pulso usado pelo status do sistema. Uma vez por dia, às 03:17, envia a limpeza do histórico.
 
@@ -93,7 +95,8 @@ Na próxima fase, a execução passa para um **agente escrito em Go**, instalado
 | Frontend | Django Templates, HTML e CSS | Em uso |
 | Fila e execução assíncrona | Celery + Redis | Em uso |
 | Agendamento | Celery beat, com uma tarefa própria (sem `django-celery-beat`) | Em uso |
-| Execução remota | Agente em Go + Django Channels (WebSocket) | Planejado |
+| Tempo real | Django Channels + `channels-redis`, servido pelo Daphne (WebSocket) | Em uso |
+| Execução remota | Agente em Go, pelo mesmo WebSocket | Planejado |
 | API | Django REST Framework + JWT | Planejado |
 
 ---
@@ -122,8 +125,10 @@ maestro-zavan/
 │   ├── status.py        # verificações de Redis, worker e agendador
 │   ├── tasks.py         # pulso do agendador e limpeza diária
 │   └── views.py
-├── maestro/             # configurações, URLs e app Celery
+├── maestro/             # configurações, URLs, app Celery e ASGI
+│   ├── asgi.py          # HTTP e WebSocket (Channels)
 │   ├── celery.py
+│   ├── routing.py       # rotas de WebSocket
 │   ├── settings.py
 │   └── urls.py
 ├── scripts/             # pasta de robôs permitidos (ROBOS_SCRIPTS_DIR)
@@ -208,6 +213,8 @@ São dois processos, cada um em um terminal:
 ```bash
 uv run manage.py runserver
 ```
+
+Com o `daphne` em `INSTALLED_APPS`, o `runserver` é o do Daphne e atende HTTP e WebSocket (a mensagem de início diz "Starting ASGI/Daphne"). Em produção, o servidor é o próprio Daphne: `uv run daphne maestro.asgi:application`.
 
 ```bash
 uv run celery -A maestro worker -B --loglevel=info
@@ -323,6 +330,24 @@ Caminhos absolutos ou que tentem sair dessa pasta (como `../outro/script.py`) s�
 ### Logs
 
 Tudo que o script escreve na saída padrão e na saída de erro é salvo no campo `log` da execução. Robôs que usam o módulo `logging` do Python têm os registros capturados automaticamente. Linhas contendo `ERROR` ou `Traceback` aparecem destacadas na tela de detalhe.
+
+### Log ao vivo
+
+Enquanto a execução está pendente ou rodando, a tela de detalhe abre um WebSocket em `ws/execucoes/<id>/` e as linhas aparecem conforme o robô as escreve, sem recarregar a página.
+
+- **No worker**, `LogAoVivo` numera cada linha e, a cada 0,5 s, grava o log no banco e só então publica o lote no grupo `execucao_<id>` do Channels. Os lotes limitam um robô muito falante a poucas escritas e mensagens por segundo.
+- **No consumer** (`executions/consumers.py`), a conexão só é aceita para usuário logado (4401) e execução existente (4404), e passa pelo `AllowedHostsOriginValidator`. Ao conectar, ele entra no grupo e só depois lê o log do banco. Como o worker grava antes de publicar, toda linha ou vem nessa leitura ou chega pelo grupo, e nenhuma se perde entre abrir a página e conectar.
+- **No navegador** (`static/js/execucao-ao-vivo.js`), as linhas entram com `textContent` (o log nunca é tratado como HTML), números repetidos são ignorados e a rolagem acompanha o fim só se você já estava no fim. No aviso de fim, a página recarrega com o status e a duração finais.
+- **Sem conexão** (Redis do Channels fora, por exemplo), a tela volta a recarregar a cada 5 segundos, e a execução segue normalmente: publicar é um extra, e o log completo fica no banco.
+
+Mensagens do WebSocket:
+
+```json
+{"tipo": "linhas", "linhas": [{"numero": 12, "texto": "..."}]}
+{"tipo": "fim", "status": "sucesso"}
+```
+
+O Channels usa o Redis no banco 1 (`CHANNELS_REDIS_URL`, padrão `redis://localhost:6379/1`), separado da fila do Celery. O SQLite roda em modo WAL, com `timeout` de 20 s, para o worker gravar enquanto a tela lê.
 
 ### Limites
 
@@ -441,9 +466,13 @@ uv run manage.py test
 | `DisparoTest` | regras do disparo e envio da tarefa só depois do commit |
 | `ExecutorTest` | linhas e código de saída, tempo esgotado, parada e encerramento à força de quem ignora o SIGTERM, com processos reais |
 | `LogLimitadoTest` | o log guarda o fim, dentro do limite |
+| `LogAoVivoTest` | lotes a cada 0,5 s com relógio falso, banco gravado antes do envio, envio do que sobrou no fim |
 | `ExecutarRoboTaskTest` | sucesso, tempo do robô e padrão, parada, limite do log, execução não pendente, novas tentativas e quando não repetir, com scripts reais |
 | `PararExecucaoTest` | cancelamento de execução pendente, pedido de parada da rodando, "parando" na lista, sem execução e 403 |
 | `ExecucaoModelTest` | criação, status padrão, regras `PROTECT` e `SET_NULL` |
+| `LogAoVivoViewTest` | WebSocket só para execução em andamento, numeração quando o começo do log foi cortado |
+| `ExecucaoConsumerTest` | recusa sem login (4401) e execução inexistente (4404), log do banco ao conectar, repasse de linhas e fim, fim imediato de execução finalizada |
+| `PublicacaoTest` | publicação no grupo da execução e falha do canal sem interromper |
 | `ExecutionViewsTest` | acesso sem login, listagem, detalhe com log, 404 para execução inexistente |
 | `AgendamentoModelTest` | validação dos dias, segundos zerados, próxima ocorrência e seus casos de borda |
 | `VerificarAgendamentosTest` | disparo no minuto certo, trava contra disparo duplo, pausados, dias desmarcados e robô em manutenção |
@@ -494,7 +523,7 @@ Cadastro de robôs, execução em segundo plano, histórico com log, permissões
 ### Versão 1.2: robustez e tempo real (em andamento)
 
 - Pronto: tempo limite e novas tentativas por robô, "parar" que encerra o processo de verdade e limites padrão editáveis
-- Log ao vivo na tela de detalhe, com Django Channels
+- Pronto: log ao vivo na tela de detalhe, com Django Channels
 - Alertas na tela quando um robô falha, estoura o tempo ou atrasa
 
 ### Depois

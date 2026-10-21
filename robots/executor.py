@@ -85,6 +85,7 @@ def executar(
     timeout_segundos: float,
     deve_parar: Callable[[], bool],
     ao_receber_linha: Callable[[str], None],
+    a_cada_volta: Callable[[], None] | None = None,
     intervalo_verificacao: float = INTERVALO_VERIFICACAO_SEGUNDOS,
     espera_encerramento: float = ESPERA_ENCERRAMENTO_SEGUNDOS,
 ) -> ResultadoExecucao:
@@ -103,6 +104,9 @@ def executar(
             segundos; ``True`` encerra o processo.
         ao_receber_linha: função chamada com cada linha da saída, sem a
             quebra de linha.
+        a_cada_volta: função opcional chamada a cada volta do laço (cerca
+            de dez vezes por segundo), com ou sem linha nova; serve para
+            despachar o que foi acumulado mesmo com o robô calado.
         intervalo_verificacao: de quanto em quanto tempo ``deve_parar`` é
             perguntada.
         espera_encerramento: quanto esperar o processo sair depois do
@@ -130,6 +134,10 @@ def executar(
                 seconds; ``True`` stops the process.
             ao_receber_linha: function called with each output line,
                 without the line break.
+            a_cada_volta: optional function called on every loop turn
+                (about ten times a second), with or without a new line;
+                it lets accumulated output be flushed even while the robot
+                is silent.
             intervalo_verificacao: how often ``deve_parar`` is asked.
             espera_encerramento: how long to wait for the process to exit
                 after the polite request (``terminate``) before forcing it
@@ -173,6 +181,8 @@ def executar(
             if linha is None:
                 break
             ao_receber_linha(linha.rstrip("\r\n"))
+        if a_cada_volta is not None:
+            a_cada_volta()
 
         agora = time.monotonic()
         if prazo_da_leitura is not None:

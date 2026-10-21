@@ -35,3 +35,17 @@
   color: var(--error);
   background: rgba(229, 72, 77, 0.08);
 }
+.log-ao-vivo {
+  margin-left: 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: #4dae50;
+}
+
+.log-ao-vivo::before {
+  content: "● ";
+}
+
+.log-output .log-salto {
+  color: var(--text-muted);
+}
