@@ -38,6 +38,36 @@ class RetencaoForm(forms.ModelForm):
         labels = {"retencao_dias": "dias de retenção"}
 
 
+class LimitesForm(forms.ModelForm):
+    """Edita os limites padrão de execução dos robôs.
+
+    O tempo máximo vale para robôs que não definem o próprio; o limite do
+    log vale para todos. Os mínimos e máximos vêm dos validadores do
+    model.
+
+    English:
+        Edits the robots' default execution limits.
+
+        The maximum time applies to robots that set none of their own; the
+        log limit applies to all of them. Minimums and maximums come from
+        the model's validators.
+    """
+
+    class Meta:
+        """Os dois limites, com rótulos curtos.
+
+        English:
+            Both limits, with short labels.
+        """
+
+        model = ConfiguracaoSistema
+        fields = ["timeout_padrao_segundos", "limite_log"]
+        labels = {
+            "timeout_padrao_segundos": "tempo máximo por execução (segundos)",
+            "limite_log": "tamanho máximo do log (caracteres)",
+        }
+
+
 class NovoUsuarioForm(UserCreationForm):
     """Cadastro de usuário pela aba de configurações, já com o grupo.
 

@@ -27,6 +27,9 @@
       </td>
       <td>
         <span class="status-badge status-{{ execucao.status }}">{{ execucao.get_status_display }}</span>
+        {% if execucao.tentativa > 1 %}
+        <span class="last-run-time">tentativa {{ execucao.tentativa }}</span>
+        {% endif %}
       </td>
       <td>
         {% if execucao.origem == "agendamento" %}

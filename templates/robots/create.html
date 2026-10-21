@@ -17,23 +17,7 @@
 <form method="post" class="form-card">
   {% csrf_token %}
 
-  <label class="field-label">nome</label>
-  {{ form.nome }}
-  {% if form.nome.errors %}
-  <p class="error-message">{{ form.nome.errors.0 }}</p>
-  {% endif %}
-
-  <label class="field-label">descrição</label>
-  {{ form.descricao }}
-
-  <label class="field-label">caminho do script</label>
-  {{ form.caminho_script }}
-  {% if form.caminho_script.errors %}
-  <p class="error-message">{{ form.caminho_script.errors.0 }}</p>
-  {% endif %}
-
-  <label class="field-label">status</label>
-  {{ form.status }}
+  {% include "robots/_campos.html" %}
 
   <button type="submit" class="btn">cadastrar</button>
 </form>

@@ -40,6 +40,8 @@ Primeiro produto da **ZV Labs**.
 - Painel com a distribuição dos robôs por status, atividade dos últimos 14 dias e console com as execuções recentes
 - Cadastro, edição e exclusão de robôs, com validação via `ModelForm`
 - Execução real de robôs em segundo plano (Celery + Redis), com captura do log
+- Botão "parar" que encerra o processo de verdade, inclusive navegadores e outros processos filhos
+- Tempo limite e novas tentativas por robô, e limites padrão editáveis na aba de configurações
 - Agendamento recorrente por horário e dias da semana, com pausar e retomar
 - Estados visuais nas listas: rodando, agendado, pausado e parado, e a próxima execução de cada robô
 - Histórico global de execuções, com a origem de cada uma (manual ou agendamento), e tela de detalhe com duração, log numerado e linhas de erro destacadas
@@ -52,9 +54,8 @@ Primeiro produto da **ZV Labs**.
 
 **Planejado**
 
-- Limites padrão de execução editáveis (hoje em prévia)
+- Log ao vivo na tela de detalhe e alertas de falha, tempo esgotado e atraso
 - Agente em Go para executar robôs em outras máquinas, conectado ao Maestro por WebSocket
-- Parada real de execuções em andamento
 - API REST
 
 ---
@@ -233,7 +234,7 @@ Acesse `http://localhost:8000/`.
 | `/robots/<id>/editar/` | `robots.change_robo` | Edição de robô |
 | `/robots/<id>/excluir/` | `robots.delete_robo` | Exclusão com confirmação |
 | `/robots/<id>/iniciar/` | `robots.executar_robo` (POST) | Dispara uma execução |
-| `/robots/<id>/parar/` | `robots.executar_robo` (POST) | Encerra a execução em andamento |
+| `/robots/<id>/parar/` | `robots.executar_robo` (POST) | Cancela a execução pendente ou pede a parada da que está rodando |
 | `/execucoes/` | Autenticado | Histórico de execuções |
 | `/execucoes/<id>/` | Autenticado | Detalhe e log de uma execução |
 | `/agendamentos/` | Autenticado | Lista de agendamentos |
@@ -243,6 +244,7 @@ Acesse `http://localhost:8000/`.
 | `/agendamentos/<id>/excluir/` | `scheduler.delete_agendamento` | Exclusão com confirmação |
 | `/configuracoes/` | Alguma permissão do app `config` | Aba de configurações |
 | `/configuracoes/retencao/` | `config.gerenciar_retencao` (POST) | Salva a retenção do histórico |
+| `/configuracoes/limites/` | `config.gerenciar_limites` (POST) | Salva os limites padrão de execução |
 | `/configuracoes/usuarios/` | `config.gerenciar_usuarios` | Usuários e acesso |
 | `/configuracoes/usuarios/novo/` | `config.gerenciar_usuarios` | Criação de usuário |
 | `/configuracoes/usuarios/<id>/grupo/` | `config.gerenciar_usuarios` (POST) | Troca de grupo |
@@ -267,7 +269,7 @@ Permissões próprias do projeto, além das que o Django cria para cada model:
 | `config.gerenciar_usuarios` | Usuários e acesso |
 | `config.ver_status_sistema` | Status do sistema |
 | `config.gerenciar_retencao` | Retenção do histórico |
-| `config.gerenciar_limites` | Limites padrão de execução (reservada) |
+| `config.gerenciar_limites` | Limites padrão de execução |
 
 Os grupos são definidos em `config/migrations/0002_grupos_de_acesso.py` e criados pelo `migrate`. As permissões são verificadas nas views: um usuário autenticado sem permissão recebe **403**, e não um redirecionamento para o login. Os botões correspondentes também são ocultados na interface, mas a proteção real é a da view.
 
@@ -283,12 +285,28 @@ Superusuários ignoram as verificações de permissão. Para testar os perfis, u
 
 ```
 pendente  →  rodando  →  sucesso
-                      ↘  falha
+    ↓           ↓     ↘  falha  →  nova tentativa (se o robô tiver)
+cancelada   cancelada
 ```
 
 1. **pendente**: a execução foi criada e a task enviada para a fila
-2. **rodando**: o worker iniciou o script e registrou `iniciado_em`
-3. **sucesso** ou **falha**: o processo terminou; o Maestro grava `finalizado_em`, o status e o log
+2. **rodando**: o worker reivindicou a execução (`UPDATE` condicional de `pendente` para `rodando`) e iniciou o script
+3. **sucesso**, **falha** ou **cancelada**: o processo terminou; o Maestro grava `finalizado_em`, o status e o log
+
+A reivindicação garante que o worker só roda execuções que ainda estão pendentes: uma execução cancelada na fila, ou uma tarefa entregue duas vezes, não roda o script.
+
+### Executor, parada e tempo limite
+
+O processo é acompanhado por `robots/executor.py`, que não conhece Django nem Celery: recebe o comando, uma função "devo parar?" e uma função "chegou uma linha". É o mesmo contrato que o agente em Go vai seguir.
+
+- O script roda com `python -u` (sem buffer), num grupo de processos próprio. A saída é lida linha a linha por uma thread, então o executor confere o tempo e o pedido de parada a cada segundo, mesmo com o robô calado.
+- **Parar**: numa execução pendente, o botão a cancela na hora. Numa execução rodando, marca `parada_solicitada`; em até 1 segundo o executor encerra o processo e a tarefa grava `cancelada`. Enquanto isso, a lista de robôs mostra "parando".
+- **Encerramento**: SIGTERM para o grupo inteiro (o robô pode tratar e fechar o navegador), e SIGKILL 5 segundos depois para o que sobrar. Processos filhos (navegador, chromedriver) são encerrados junto, inclusive os que ficaram abertos depois de um robô terminar normalmente.
+- **Tempo limite**: o do robô (`timeout_segundos`) ou, se vazio, o padrão da aba de configurações. Estourar o tempo vira `falha`.
+
+### Novas tentativas
+
+`max_tentativas` (0 a 5) conta as tentativas extras depois de uma falha: com 2, o robô roda até 3 vezes. Cada tentativa é uma `Execucao` nova, com o número da tentativa, log e duração próprios, disparada pelo mesmo serviço do botão (então um robô que foi para manutenção não tenta de novo). Não há nova tentativa quando o usuário mandou parar nem quando o script não existe ou está fora da pasta permitida.
 
 Regras aplicadas no disparo, em `robots/services.py`, valendo para o botão e para os agendamentos:
 
@@ -308,10 +326,12 @@ Tudo que o script escreve na saída padrão e na saída de erro é salvo no camp
 
 ### Limites
 
-| Limite | Valor |
-|---|---|
-| Tempo máximo de execução | 300 segundos |
-| Tamanho do log armazenado | últimos 10.000 caracteres |
+| Limite | Padrão | Onde muda |
+|---|---|---|
+| Tempo máximo de execução | 300 segundos (10 a 86.400) | por robô, ou o padrão na aba de configurações |
+| Tamanho do log armazenado | últimos 10.000 caracteres (1.000 a 1.000.000) | aba de configurações |
+
+Mudanças nos limites valem a partir da próxima execução.
 
 ### Limitação atual
 
@@ -361,6 +381,9 @@ O prazo (entre 7 e 3650 dias, padrão 90) é editado na própria aba. Todo dia �
 | `descricao` | texto | opcional |
 | `caminho_script` | texto | relativo a `ROBOS_SCRIPTS_DIR` |
 | `status` | escolha | `ativo`, `inativo`, `manutencao` |
+| `timeout_segundos` | inteiro | opcional, 10 a 86.400; vazio usa o padrão da configuração |
+| `max_tentativas` | inteiro | 0 a 5 tentativas extras depois de uma falha |
+| `duracao_esperada_segundos` | inteiro | opcional |
 | `responsavel` | FK para usuário | `PROTECT` |
 | `criado_em` | data e hora | automático |
 
@@ -369,13 +392,15 @@ O prazo (entre 7 e 3650 dias, padrão 90) é editado na própria aba. Todo dia �
 | Campo | Tipo | Observação |
 |---|---|---|
 | `robo` | FK para Robo | `PROTECT` |
-| `status` | escolha | `pendente`, `rodando`, `sucesso`, `falha` |
+| `status` | escolha | `pendente`, `rodando`, `sucesso`, `falha`, `cancelada` |
 | `origem` | escolha | `manual`, `agendamento` |
 | `agendamento` | FK para Agendamento | `SET_NULL`, opcional |
 | `disparado_por` | FK para usuário | `SET_NULL`, vazio em execuções agendadas |
 | `iniciado_em` | data e hora | preenchido pelo worker |
 | `finalizado_em` | data e hora | preenchido pelo worker |
 | `log` | texto | saída do script |
+| `tentativa` | inteiro | 1 na primeira; cada nova tentativa é uma execução nova |
+| `parada_solicitada` | booleano | marcado pelo botão "parar", lido pelo executor a cada segundo |
 
 ### Agendamento
 
@@ -414,7 +439,10 @@ uv run manage.py test
 | `RoboModelTest` | criação, status padrão, exibição do status, regra `PROTECT` no responsável |
 | `RobotViewsTest` | acesso sem login, listagem, edição, exclusão com e sem execuções, robô em manutenção, 403 sem `executar_robo` |
 | `DisparoTest` | regras do disparo e envio da tarefa só depois do commit |
-| `PararExecucaoTest` | cancelamento de execução pendente, tarefa que não roda execução cancelada, reivindicação pela tarefa, execução rodando, sem execução e 403 |
+| `ExecutorTest` | linhas e código de saída, tempo esgotado, parada e encerramento à força de quem ignora o SIGTERM, com processos reais |
+| `LogLimitadoTest` | o log guarda o fim, dentro do limite |
+| `ExecutarRoboTaskTest` | sucesso, tempo do robô e padrão, parada, limite do log, execução não pendente, novas tentativas e quando não repetir, com scripts reais |
+| `PararExecucaoTest` | cancelamento de execução pendente, pedido de parada da rodando, "parando" na lista, sem execução e 403 |
 | `ExecucaoModelTest` | criação, status padrão, regras `PROTECT` e `SET_NULL` |
 | `ExecutionViewsTest` | acesso sem login, listagem, detalhe com log, 404 para execução inexistente |
 | `AgendamentoModelTest` | validação dos dias, segundos zerados, próxima ocorrência e seus casos de borda |
@@ -426,6 +454,7 @@ uv run manage.py test
 | `ConfigUsersViewsTest` | tela de usuários, permissões, recusas como mensagem e ações só por POST |
 | `StatusDoSistemaTest` | Redis respondendo e fora do ar, worker, pulso do agendador recente, ausente e velho |
 | `RetencaoTest` | limpeza só das finalizadas antigas, nunca das em andamento, tarefa do beat, edição pela tela, valor inválido, 403 e GET |
+| `LimitesPadraoTest` | edição dos limites, valor inválido, 403 e 302 |
 | `CriarUsuarioTest` | criação com e sem grupo, senha em hash, nunca superusuário, registro, senhas diferentes, usuário repetido, 302 e 403 |
 | `LogoutTest` | logout encerra a sessão e volta para a página inicial |
 
@@ -462,13 +491,11 @@ Cadastro de robôs, execução em segundo plano, histórico com log, permissões
 - Aba de configurações: gestão e criação de usuários com registro de alterações, status do sistema e retenção do histórico com limpeza automática
 - Permissão própria para iniciar e parar robôs, e grupos criados por migração
 
-### Versão 1.2: robustez e tempo real
+### Versão 1.2: robustez e tempo real (em andamento)
 
-- Tempo limite e número de tentativas configuráveis por robô
-- Botão "parar" que encerra o processo de verdade
+- Pronto: tempo limite e novas tentativas por robô, "parar" que encerra o processo de verdade e limites padrão editáveis
 - Log ao vivo na tela de detalhe, com Django Channels
 - Alertas na tela quando um robô falha, estoura o tempo ou atrasa
-- Limites padrão de execução editáveis
 
 ### Depois
 
@@ -482,7 +509,6 @@ Cadastro de robôs, execução em segundo plano, histórico com log, permissões
 
 | Item | Descrição | Prioridade |
 |---|---|---|
-| Parar execução | para uma execução rodando, `robot_stop` marca a execução como finalizada, mas o processo continua no worker; será resolvido pelo executor da 1.2 e pelo agente (execuções pendentes já são canceladas de verdade) | Média |
 | Tipos no código antigo | `robots/views.py` e outros arquivos anteriores à convenção de type hints ainda penduram atributos em models e não passam no `mypy`; adequação num commit de estilo próprio | Baixa |
 | Estilos inline | as barras do painel usam `style` inline, o que vai conflitar com uma política de CSP rígida | Baixa |
 

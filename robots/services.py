@@ -13,11 +13,14 @@ English:
     the only way to start a robot: both the "start" button and the
     scheduler go through it, so the rule is written only once.
 """
+
+from django.contrib.auth.models import User
 from django.db import transaction
 
 from executions.models import Execucao
 from robots.models import Robo
 from robots.tasks import executar_robo
+from scheduler.models import Agendamento
 
 
 class DisparoRecusado(Exception):
@@ -37,8 +40,12 @@ class DisparoRecusado(Exception):
 
 
 def disparar_execucao(
-    robo, disparado_por=None, origem=Execucao.Origem.MANUAL, agendamento=None
-):
+    robo: Robo,
+    disparado_por: User | None = None,
+    origem: Execucao.Origem = Execucao.Origem.MANUAL,
+    agendamento: Agendamento | None = None,
+    tentativa: int = 1,
+) -> Execucao:
     """Cria uma execução pendente e envia a tarefa ao Celery após o commit.
 
     Passo a passo:
@@ -59,6 +66,8 @@ def disparar_execucao(
             o disparo é automático.
         origem: de onde veio o disparo (``MANUAL`` ou ``AGENDAMENTO``).
         agendamento: agendamento que originou o disparo, se houver.
+        tentativa: número da tentativa; maior que 1 quando é uma nova
+            tentativa depois de uma falha.
 
     Returns:
         A ``Execucao`` criada, com status ``PENDENTE``.
@@ -90,6 +99,8 @@ def disparar_execucao(
             origem: where the trigger came from (``MANUAL`` or
                 ``AGENDAMENTO``).
             agendamento: schedule that caused the trigger, if any.
+            tentativa: attempt number; greater than 1 when it is a new
+                attempt after a failure.
 
         Returns:
             The created ``Execucao``, with ``PENDENTE`` status.
@@ -99,9 +110,7 @@ def disparar_execucao(
                 pending or running execution.
     """
     if robo.status != Robo.Status.ATIVO:
-        raise DisparoRecusado(
-            f"robô está {robo.get_status_display().lower()}"
-        )
+        raise DisparoRecusado(f"robô está {robo.get_status_display().lower()}")
 
     em_andamento = robo.execucoes.filter(
         status__in=[Execucao.Status.PENDENTE, Execucao.Status.RODANDO]
@@ -115,6 +124,7 @@ def disparar_execucao(
         disparado_por=disparado_por,
         origem=origem,
         agendamento=agendamento,
+        tentativa=tentativa,
     )
     transaction.on_commit(lambda: executar_robo.delay(execucao.id))
     return execucao

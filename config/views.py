@@ -29,7 +29,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
 from accounts.tipos import RequisicaoAutenticada
-from config.forms import NovoUsuarioForm, RetencaoForm
+from config.forms import LimitesForm, NovoUsuarioForm, RetencaoForm
 from config.models import ConfiguracaoSistema, RegistroAcesso
 from config.services import (
     AlteracaoRecusada,
@@ -40,7 +40,6 @@ from config.services import (
     trocar_grupo,
 )
 from config.status import status_do_sistema
-from robots.tasks import LIMITE_LOG, TIMEOUT_SEGUNDOS
 
 View = Callable[..., HttpResponse]
 
@@ -109,19 +108,23 @@ def exige_acesso_a_configuracoes(view: View) -> View:
 
 
 def _renderizar_home(
-    request: RequisicaoAutenticada, form_retencao: RetencaoForm | None = None
+    request: RequisicaoAutenticada,
+    form_retencao: RetencaoForm | None = None,
+    form_limites: LimitesForm | None = None,
 ) -> HttpResponse:
     """Monta o contexto da aba de configurações e renderiza a página.
 
-    Usada pela própria aba e pela view de retenção, que precisa
-    reexibir a página com os erros do formulário. O status do sistema só é
-    verificado para quem pode vê-lo, porque cada verificação conversa com
-    o Redis e com o worker e leva algum tempo.
+    Usada pela própria aba e pelas views de retenção e de limites, que
+    precisam reexibir a página com os erros do formulário. O status do
+    sistema só é verificado para quem pode vê-lo, porque cada verificação
+    conversa com o Redis e com o worker e leva algum tempo.
 
     Args:
         request: requisição HTTP de um usuário com acesso à aba.
         form_retencao: formulário de retenção com erros, ou ``None`` para
             um formulário novo com o valor atual.
+        form_limites: formulário de limites com erros, ou ``None`` para
+            um formulário novo com os valores atuais.
 
     Returns:
         A página ``config/home.html`` renderizada.
@@ -129,15 +132,18 @@ def _renderizar_home(
     English:
         Builds the settings tab context and renders the page.
 
-        Used by the tab itself and by the retention view, which needs to
-        show the page again with the form errors. The system status is
-        only checked for users allowed to see it, because each check talks
-        to Redis and to the worker and takes some time.
+        Used by the tab itself and by the retention and limits views,
+        which need to show the page again with the form errors. The
+        system status is only checked for users allowed to see it,
+        because each check talks to Redis and to the worker and takes
+        some time.
 
         Args:
             request: HTTP request from a user with access to the tab.
             form_retencao: retention form with errors, or ``None`` for a
                 fresh form with the current value.
+            form_limites: limits form with errors, or ``None`` for a fresh
+                form with the current values.
 
         Returns:
             The rendered ``config/home.html`` page.
@@ -149,8 +155,7 @@ def _renderizar_home(
         "form_retencao": form_retencao or RetencaoForm(instance=configuracao),
         "limite_retencao": limite_da_retencao(),
         "status_sistema": status_do_sistema() if pode_ver_status else [],
-        "timeout_padrao": TIMEOUT_SEGUNDOS,
-        "limite_log": LIMITE_LOG,
+        "form_limites": form_limites or LimitesForm(instance=configuracao),
         "usuarios_ativos": User.objects.filter(is_active=True).count(),
         "usuarios_inativos": User.objects.filter(is_active=False).count(),
     }
@@ -162,9 +167,7 @@ def config_home(request: RequisicaoAutenticada) -> HttpResponse:
     """Exibe a aba de configurações.
 
     Cada seção aparece de acordo com a permissão do usuário; quem decide
-    isso é o template, com ``perms``. Os limites de execução vêm das
-    constantes de ``robots.tasks``, para a tela mostrar sempre os valores
-    reais.
+    isso é o template, com ``perms``.
 
     Args:
         request: requisição HTTP de um usuário com acesso à aba.
@@ -176,9 +179,7 @@ def config_home(request: RequisicaoAutenticada) -> HttpResponse:
         Shows the settings tab.
 
         Each section appears according to the user's permissions; the
-        template decides that with ``perms``. The execution limits come
-        from the ``robots.tasks`` constants, so the page always shows the
-        real values.
+        template decides that with ``perms``.
 
         Args:
             request: HTTP request from a user with access to the tab.
@@ -230,6 +231,47 @@ def config_retention(request: RequisicaoAutenticada) -> HttpResponse:
     messages.success(
         request, f"Retenção salva: {configuracao.retencao_dias} dias."
     )
+    return redirect("config_home")
+
+
+@login_required
+@permission_required("config.gerenciar_limites", raise_exception=True)
+def config_limits(request: RequisicaoAutenticada) -> HttpResponse:
+    """Salva os limites padrão de execução.
+
+    Só age em POST; um GET volta para a aba sem alterar nada. Os novos
+    valores valem a partir da próxima execução: a que está rodando segue
+    com os limites de quando começou.
+
+    Args:
+        request: requisição HTTP; exige ``config.gerenciar_limites``.
+
+    Returns:
+        Redireciona para a aba após salvar, ou a renderiza com os erros.
+
+    English:
+        Saves the default execution limits.
+
+        It only acts on POST; a GET goes back to the tab, changing
+        nothing. The new values apply from the next execution on: the one
+        running keeps the limits it started with.
+
+        Args:
+            request: HTTP request; requires ``config.gerenciar_limites``.
+
+        Returns:
+            Redirects to the tab after saving, or renders it with errors.
+    """
+    if request.method != "POST":
+        return redirect("config_home")
+
+    form = LimitesForm(request.POST, instance=ConfiguracaoSistema.atual())
+    if not form.is_valid():
+        messages.error(request, "Limites não salvos: confira os valores.")
+        return _renderizar_home(request, form_limites=form)
+
+    form.save()
+    messages.success(request, "Limites padrão salvos.")
     return redirect("config_home")
 
 

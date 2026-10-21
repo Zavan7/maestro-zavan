@@ -5,6 +5,27 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 ## [Não lançado]
 
+### Adicionado
+
+- Executor próprio (`robots/executor.py`), sem Django nem Celery: acompanha o processo, lê a saída linha a linha e confere tempo e pedido de parada a cada segundo
+- Tempo máximo e novas tentativas (0 a 5) por robô, e duração esperada opcional
+- Cada nova tentativa é uma execução própria, com o número da tentativa na lista e no detalhe
+- Status `cancelada` para execuções paradas pelo usuário
+- Limites padrão de execução (tempo máximo e tamanho do log) editáveis na aba de configurações
+- Estado "parando" na lista de robôs enquanto a parada pedida não termina
+
+### Alterado
+
+- O botão "parar" encerra o processo de verdade: marca `parada_solicitada`, e o executor manda SIGTERM ao grupo de processos e SIGKILL 5 segundos depois, alcançando navegadores e outros filhos
+- Processos filhos que sobram depois de um robô terminar são encerrados
+- Os scripts rodam com `python -u`, para cada linha do log chegar assim que é escrita
+- A tela de edição de robô usa os campos do formulário e passa a mostrar os erros de validação
+- A limpeza do histórico também apaga execuções canceladas antigas
+
+### Corrigido
+
+- As mensagens de erro de formulário só tinham estilo na tela de login
+
 ## [1.1.0] - 2026-10-21
 
 ### Adicionado

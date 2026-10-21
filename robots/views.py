@@ -147,7 +147,8 @@ def robot_list(request):
         robo.ultima_execucao = ultima
 
         if ultima and ultima.status == Execucao.Status.RODANDO:
-            robo.estado_agora, robo.texto_agora = "rodando", "rodando"
+            texto = "parando" if ultima.parada_solicitada else "rodando"
+            robo.estado_agora, robo.texto_agora = "rodando", texto
         elif ultima and ultima.status == Execucao.Status.PENDENTE:
             robo.estado_agora, robo.texto_agora = "rodando", "aguardando"
         else:
@@ -351,15 +352,18 @@ def robot_start(request, pk):
 
 @permission_required("robots.executar_robo", raise_exception=True)
 def robot_stop(request: RequisicaoAutenticada, pk: int) -> HttpResponse:
-    """Encerra no registro a execução em andamento do robô.
+    """Para a execução em andamento do robô.
 
     - Execução ``PENDENTE`` (ainda na fila, por exemplo com o worker
-      parado) é cancelada: vira ``FALHA`` com o motivo no log. Como a
-      tarefa só roda o script se a execução ainda estiver pendente, o
-      worker não a executa depois.
-    - Execução ``RODANDO`` só é marcada como finalizada: o processo do
-      script não é interrompido. A parada de verdade vem com o executor
-      próprio e com o agente em Go (veja o ``TODO`` no código).
+      parado) é cancelada na hora. Como a tarefa só roda o script se a
+      execução ainda estiver pendente, o worker não a executa depois.
+    - Execução ``RODANDO`` recebe ``parada_solicitada``. O executor
+      confere esse campo a cada segundo e encerra o processo; quem marca
+      ``CANCELADA`` é a tarefa, quando o processo de fato terminou. Por
+      isso a mensagem diz "parada solicitada", e não "parada".
+
+    O ``update()`` grava só o campo do pedido, sem sobrescrever o que o
+    worker estiver gravando na mesma execução.
 
     Args:
         request: requisição HTTP; exige a permissão
@@ -370,16 +374,20 @@ def robot_stop(request: RequisicaoAutenticada, pk: int) -> HttpResponse:
         Sempre redireciona para a lista de robôs.
 
     English:
-        Ends, in the record, the robot's execution in progress.
+        Stops the robot's execution in progress.
 
         - A ``PENDENTE`` execution (still queued, e.g. with the worker
-          down) is cancelled: it becomes ``FALHA`` with the reason in the
-          log. Since the task only runs the script if the execution is
-          still pending, the worker does not run it later.
-        - A ``RODANDO`` execution is only marked as finished: the script
-          process is not interrupted. Real stopping comes with the
-          dedicated executor and the Go agent (see the ``TODO`` in the
-          code).
+          down) is cancelled right away. Since the task only runs the
+          script if the execution is still pending, the worker does not
+          run it later.
+        - A ``RODANDO`` execution gets ``parada_solicitada``. The executor
+          checks that field every second and stops the process; the task
+          is the one that sets ``CANCELADA``, once the process has really
+          ended. That is why the message says "stop requested", not
+          "stopped".
+
+        ``update()`` writes only the request field, without overwriting
+        what the worker may be saving on the same execution.
 
         Args:
             request: HTTP request; requires the ``robots.executar_robo``
@@ -402,7 +410,7 @@ def robot_stop(request: RequisicaoAutenticada, pk: int) -> HttpResponse:
             request, f"'{robo.nome}' não tem execução em andamento."
         )
     elif execucao.status == Execucao.Status.PENDENTE:
-        execucao.status = Execucao.Status.FALHA
+        execucao.status = Execucao.Status.CANCELADA
         execucao.finalizado_em = timezone.now()
         execucao.log = (
             f"Cancelada antes de iniciar por {request.user.username}."
@@ -412,12 +420,12 @@ def robot_stop(request: RequisicaoAutenticada, pk: int) -> HttpResponse:
             request, f"Execução pendente de '{robo.nome}' cancelada."
         )
     else:
-        # TODO: com o executor próprio e o agente Go, aqui a parada é
-        # pedida de verdade e o processo é encerrado.
-        # Por enquanto, só marca o registro como finalizado.
-        execucao.status = Execucao.Status.SUCESSO
-        execucao.finalizado_em = timezone.now()
-        execucao.save(update_fields=["status", "finalizado_em"])
-        messages.success(request, f"Execução de '{robo.nome}' parada.")
+        Execucao.objects.filter(pk=execucao.pk).update(
+            parada_solicitada=True
+        )
+        messages.success(
+            request,
+            f"Parada de '{robo.nome}' solicitada; o robô para em instantes.",
+        )
 
     return redirect("robot_list")

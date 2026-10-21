@@ -3,7 +3,9 @@
 English:
     Models for the robots app.
 """
+
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 
@@ -65,6 +67,26 @@ class Robo(models.Model):
         on_delete=models.PROTECT,
         related_name="robos",
     )
+    timeout_segundos = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(10), MaxValueValidator(86_400)],
+        help_text="Vazio usa o tempo máximo padrão da aba de configurações.",
+    )
+    max_tentativas = models.PositiveSmallIntegerField(
+        default=0,
+        validators=[MaxValueValidator(5)],
+        help_text=(
+            "De 0 a 5. Com 2, o robô roda até 3 vezes. Parada pelo usuário "
+            "e script inválido não tentam de novo."
+        ),
+    )
+    duracao_esperada_segundos = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1)],
+        help_text="Quanto o robô costuma levar, em segundos (opcional).",
+    )
     criado_em = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -87,7 +109,7 @@ class Robo(models.Model):
             ("executar_robo", "Pode iniciar e parar robôs"),
         ]
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Retorna o nome do robô, usado no admin e nos selects.
 
         English:

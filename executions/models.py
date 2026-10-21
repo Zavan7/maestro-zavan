@@ -36,19 +36,22 @@ class Execucao(models.Model):
         """Ciclo de vida da execução.
 
         ``PENDENTE`` (criada, esperando o worker) → ``RODANDO`` (script em
-        andamento) → ``SUCESSO`` ou ``FALHA``.
+        andamento) → ``SUCESSO`` ou ``FALHA``. ``CANCELADA`` é quando um
+        usuário mandou parar, ainda na fila ou já rodando.
 
         English:
             Execution life cycle.
 
             ``PENDENTE`` (created, waiting for the worker) → ``RODANDO``
-            (script running) → ``SUCESSO`` or ``FALHA``.
+            (script running) → ``SUCESSO`` or ``FALHA``. ``CANCELADA`` is
+            when a user asked to stop, while queued or already running.
         """
 
         PENDENTE = "pendente", "Pendente"
         RODANDO = "rodando", "Rodando"
         SUCESSO = "sucesso", "Sucesso"
         FALHA = "falha", "Falha"
+        CANCELADA = "cancelada", "Cancelada"
 
     class Origem(models.TextChoices):
         """De onde veio o disparo.
@@ -98,6 +101,8 @@ class Execucao(models.Model):
     iniciado_em = models.DateTimeField(null=True, blank=True)
     finalizado_em = models.DateTimeField(null=True, blank=True)
     log = models.TextField(blank=True)
+    tentativa = models.PositiveSmallIntegerField(default=1)
+    parada_solicitada = models.BooleanField(default=False)
 
     def __str__(self):
         """Retorna o nome do robô e o status, por exemplo ``robo-x — Falha``.
