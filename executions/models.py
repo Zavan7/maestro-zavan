@@ -102,6 +102,7 @@ class Execucao(models.Model):
     finalizado_em = models.DateTimeField(null=True, blank=True)
     log = models.TextField(blank=True)
     tentativa = models.PositiveSmallIntegerField(default=1)
+    total_linhas = models.PositiveIntegerField(default=0)
     parada_solicitada = models.BooleanField(default=False)
 
     def __str__(self):

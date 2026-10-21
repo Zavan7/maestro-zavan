@@ -20,7 +20,7 @@ from executions.models import Execucao
 from robots.executor import Motivo, executar
 from robots.models import Robo
 from robots.services import DisparoRecusado, disparar_execucao
-from robots.tasks import LogLimitado, executar_robo
+from robots.tasks import LogAoVivo, LogLimitado, executar_robo
 
 User = get_user_model()
 
@@ -450,6 +450,109 @@ class LogLimitadoTest(TestCase):
         self.assertEqual(log.texto(), "bbbb\ncccc")
 
 
+class RelogioFalso:
+    """Relógio controlado pelo teste, no lugar de ``time.monotonic``.
+
+    English:
+        Test-controlled clock, in place of ``time.monotonic``.
+    """
+
+    def __init__(self):
+        """Começa no instante zero.
+
+        English:
+            Starts at time zero.
+        """
+        self.agora = 0.0
+
+    def __call__(self):
+        """Devolve o instante atual.
+
+        English:
+            Returns the current time.
+        """
+        return self.agora
+
+
+class LogAoVivoTest(TestCase):
+    """Testes dos lotes do log ao vivo, a cada 0,5s, banco antes da tela.
+
+    English:
+        Tests for the live log batches, every 0.5s, database before page.
+    """
+
+    def setUp(self):
+        """Cria uma execução e o log com relógio falso e publicação espiã.
+
+        English:
+            Creates an execution and the log with a fake clock and a spy
+            publisher.
+        """
+        usuario = User.objects.create_user(username="u", password="senha123")
+        robo = Robo.objects.create(
+            nome="robo", caminho_script="robo.py", responsavel=usuario
+        )
+        self.execucao = Execucao.objects.create(robo=robo)
+        self.relogio = RelogioFalso()
+        self.log = LogAoVivo(self.execucao.pk, 10_000, relogio=self.relogio)
+        patcher = mock.patch("robots.tasks.publicar_linhas")
+        self.publicar = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_primeira_linha_sai_na_hora_e_as_seguintes_em_lote(self):
+        """A primeira linha sai na hora; as próximas esperam 0,5s juntas.
+
+        English:
+            The first line goes out right away; the next ones wait 0.5s
+            together.
+        """
+        self.log.adicionar("um")
+        self.log.adicionar("dois")
+        self.log.adicionar("três")
+        self.assertEqual(self.publicar.call_count, 1)
+
+        self.relogio.agora = 0.5
+        self.log.despachar()
+
+        self.assertEqual(self.publicar.call_count, 2)
+        self.assertEqual(
+            self.publicar.call_args.args[1],
+            [{"numero": 2, "texto": "dois"}, {"numero": 3, "texto": "três"}],
+        )
+
+    def test_grava_no_banco_antes_de_enviar(self):
+        """Quando o lote é enviado, as linhas dele já estão no banco.
+
+        English:
+            When the batch is sent, its lines are already in the database.
+        """
+        no_banco_ao_enviar = []
+        self.publicar.side_effect = lambda *_: no_banco_ao_enviar.append(
+            Execucao.objects.values_list("log", "total_linhas").get(
+                pk=self.execucao.pk
+            )
+        )
+
+        self.log.adicionar("um")
+
+        self.assertEqual(no_banco_ao_enviar, [("um", 1)])
+
+    def test_encerrar_envia_o_que_sobrou(self):
+        """Ao encerrar, as linhas acumuladas saem sem esperar o intervalo.
+
+        English:
+            On close, the accumulated lines go out without waiting.
+        """
+        self.log.adicionar("um")
+        self.log.adicionar("dois")
+
+        self.log.encerrar()
+
+        self.assertEqual(
+            self.publicar.call_args.args[1], [{"numero": 2, "texto": "dois"}]
+        )
+
+
 @override_settings(ROBOS_SCRIPTS_DIR=tempfile.gettempdir())
 class ExecutarRoboTaskTest(TestCase):
     """Testes da tarefa que roda o robô, com scripts reais temporários.
@@ -510,6 +613,35 @@ class ExecutarRoboTaskTest(TestCase):
         self.assertEqual(execucao.log, "etapa 1\netapa 2")
         self.assertIsNotNone(execucao.iniciado_em)
         self.assertIsNotNone(execucao.finalizado_em)
+
+    def test_publica_as_linhas_e_o_fim(self):
+        """A tarefa manda as linhas numeradas e, depois de gravar, o fim.
+
+        English:
+            The task sends the numbered lines and, after saving, the end.
+        """
+        self._script("print('etapa 1')\nprint('etapa 2')")
+
+        with (
+            mock.patch("robots.tasks.publicar_linhas") as linhas,
+            mock.patch("robots.tasks.publicar_fim") as fim,
+        ):
+            execucao = self._rodar()
+
+        enviadas = [
+            linha
+            for chamada in linhas.call_args_list
+            for linha in chamada.args[1]
+        ]
+        self.assertEqual(
+            enviadas,
+            [
+                {"numero": 1, "texto": "etapa 1"},
+                {"numero": 2, "texto": "etapa 2"},
+            ],
+        )
+        fim.assert_called_once_with(execucao.pk, Execucao.Status.SUCESSO)
+        self.assertEqual(execucao.total_linhas, 2)
 
     def test_tempo_do_robo_esgotado_vira_falha(self):
         """Passar do tempo do próprio robô vira falha, com o motivo no log.
@@ -706,6 +838,19 @@ class PararExecucaoTest(TestCase):
             execucao.log, "Cancelada antes de iniciar por operador."
         )
         self.assertContains(response, "Execução pendente de &#x27;")
+
+    def test_cancelar_pendente_avisa_a_tela(self):
+        """Cancelar uma pendente avisa a tela, que recarrega.
+
+        English:
+            Cancelling a pending one notifies the page, which reloads.
+        """
+        execucao = Execucao.objects.create(robo=self.robo)
+
+        with mock.patch("robots.views.publicar_fim") as fim:
+            self.client.post(self.url)
+
+        fim.assert_called_once_with(execucao.pk, Execucao.Status.CANCELADA)
 
     def test_execucao_rodando_recebe_o_pedido_de_parada(self):
         """Uma execução rodando só recebe o pedido; o status fica com a tarefa.

@@ -7,8 +7,8 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/executions.css' %}" />
-{% if execucao.status == "pendente" or execucao.status == "rodando" %}
-<meta http-equiv="refresh" content="5" />
+{% if ao_vivo %}
+<script src="{% static 'js/execucao-ao-vivo.js' %}" defer></script>
 {% endif %}
 {% endblock %}
 
@@ -62,12 +62,21 @@
   </div>
 </div>
 
-<h2 class="section-title">log</h2>
-<ol class="log-output">
-  {% for linha in execucao.log.splitlines %}
+<h2 class="section-title">
+  log
+  {% if ao_vivo %}
+  <span class="log-ao-vivo" id="log-estado">ao vivo</span>
+  {% endif %}
+</h2>
+<ol class="log-output" id="log" start="{{ primeira_linha }}"
+  {% if ao_vivo %}
+  data-ws-url="/ws/execucoes/{{ execucao.id }}/"
+  data-ultima-linha="{{ ultima_linha }}"
+  {% endif %}>
+  {% for linha in linhas %}
   <li class="{% if 'ERROR' in linha or 'Traceback' in linha %}log-erro{% endif %}">{{ linha }}</li>
   {% empty %}
-  <li>Nenhum log registrado ainda.</li>
+  <li class="log-vazio">Nenhum log registrado ainda.</li>
   {% endfor %}
 </ol>
 {% endblock %}

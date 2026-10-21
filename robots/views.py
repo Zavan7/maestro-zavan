@@ -22,6 +22,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from accounts.tipos import RequisicaoAutenticada
+from executions.ao_vivo import publicar_fim
 from executions.models import Execucao
 from robots.forms import RoboForm
 from robots.models import Robo
@@ -416,6 +417,7 @@ def robot_stop(request: RequisicaoAutenticada, pk: int) -> HttpResponse:
             f"Cancelada antes de iniciar por {request.user.username}."
         )
         execucao.save(update_fields=["status", "finalizado_em", "log"])
+        publicar_fim(execucao.pk, execucao.status)
         messages.success(
             request, f"Execução pendente de '{robo.nome}' cancelada."
         )

@@ -13,6 +13,8 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 - Status `cancelada` para execuções paradas pelo usuário
 - Limites padrão de execução (tempo máximo e tamanho do log) editáveis na aba de configurações
 - Estado "parando" na lista de robôs enquanto a parada pedida não termina
+- Log ao vivo na tela de detalhe: as linhas chegam por WebSocket (Django Channels, servido pelo Daphne) conforme o robô as escreve, com a numeração contínua mesmo quando o começo do log foi cortado
+- O log de uma execução em andamento é gravado no banco a cada 0,5 s, então quem abre a página no meio já vê o que saiu
 
 ### Alterado
 
@@ -21,6 +23,9 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 - Os scripts rodam com `python -u`, para cada linha do log chegar assim que é escrita
 - A tela de edição de robô usa os campos do formulário e passa a mostrar os erros de validação
 - A limpeza do histórico também apaga execuções canceladas antigas
+- A tela de detalhe deixa de recarregar a cada 5 segundos; isso só volta a acontecer se o WebSocket não conectar
+- O `runserver` passa a ser o do Daphne, que atende HTTP e WebSocket
+- O SQLite roda em modo WAL, com `timeout` de 20 s, para o worker gravar o log enquanto a tela lê
 
 ### Corrigido
 
