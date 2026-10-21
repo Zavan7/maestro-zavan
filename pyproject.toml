@@ -21,6 +21,7 @@ dev = [
     "mypy>=2.4.0",
     "ruff>=0.17.1",
     "types-channels>=4.3.0.20260518",
+    "websockets>=17.3",
 ]
 
 [tool.ruff]

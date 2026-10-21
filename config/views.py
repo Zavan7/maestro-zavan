@@ -29,6 +29,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
 from accounts.tipos import RequisicaoAutenticada
+from agents.models import Agente
 from config.forms import LimitesForm, NovoUsuarioForm, RetencaoForm
 from config.models import ConfiguracaoSistema, RegistroAcesso
 from config.services import (
@@ -149,6 +150,7 @@ def _renderizar_home(
             The rendered ``config/home.html`` page.
     """
     configuracao = ConfiguracaoSistema.atual()
+    agentes_ativos = list(Agente.objects.filter(ativo=True))
     pode_ver_status = request.user.has_perm("config.ver_status_sistema")
     contexto = {
         "configuracao": configuracao,
@@ -156,6 +158,8 @@ def _renderizar_home(
         "limite_retencao": limite_da_retencao(),
         "status_sistema": status_do_sistema() if pode_ver_status else [],
         "form_limites": form_limites or LimitesForm(instance=configuracao),
+        "agentes_ativos": len(agentes_ativos),
+        "agentes_online": sum(agente.online() for agente in agentes_ativos),
         "usuarios_ativos": User.objects.filter(is_active=True).count(),
         "usuarios_inativos": User.objects.filter(is_active=False).count(),
     }

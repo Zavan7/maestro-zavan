@@ -15,6 +15,10 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 - Estado "parando" na lista de robôs enquanto a parada pedida não termina
 - Log ao vivo na tela de detalhe: as linhas chegam por WebSocket (Django Channels, servido pelo Daphne) conforme o robô as escreve, com a numeração contínua mesmo quando o começo do log foi cortado
 - O log de uma execução em andamento é gravado no banco a cada 0,5 s, então quem abre a página no meio já vê o que saiu
+- Agentes: cadastro na aba de configurações (permissão `gerenciar_agentes`), com token mostrado uma única vez e guardado como hash, troca de token, desativação e registro de cada alteração
+- Robôs podem rodar num agente: o disparo manda `iniciar` ao agente, o "parar" manda `parar`, e o agente devolve o log ao vivo e como terminou, pelo WebSocket `ws/agente/`
+- Protocolo do agente documentado em `docs/agente/protocolo.md` e agente de referência em Python (`tools/agente_referencia.py`) para testar sem o agente em Go
+- Status do sistema mostra quantos agentes estão online
 
 ### Alterado
 
@@ -26,6 +30,7 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 - A tela de detalhe deixa de recarregar a cada 5 segundos; isso só volta a acontecer se o WebSocket não conectar
 - O `runserver` passa a ser o do Daphne, que atende HTTP e WebSocket
 - O SQLite roda em modo WAL, com `timeout` de 20 s, para o worker gravar o log enquanto a tela lê
+- As regras de status final e nova tentativa saem da tarefa do worker para `robots/conclusao.py`, usadas igualmente pelo worker e pelos agentes
 
 ### Corrigido
 

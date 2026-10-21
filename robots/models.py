@@ -21,6 +21,12 @@ class Robo(models.Model):
     por robôs não pode ser excluído sem antes passar os robôs para outra
     pessoa, para não perder quem responde por eles.
 
+    Com ``agente`` preenchido, o robô roda naquela máquina, e não no
+    worker; o caminho do script passa a ser resolvido pelo agente, dentro
+    da pasta aprovada dele. O ``PROTECT`` impede excluir um agente que
+    ainda tem robôs: ninguém descobre na hora de rodar que o robô perdeu
+    a máquina.
+
     English:
         RPA robot registered in Maestro.
 
@@ -32,6 +38,12 @@ class Robo(models.Model):
         ``responsavel`` uses ``on_delete=PROTECT``: a user who owns robots
         cannot be deleted before the robots are handed to someone else, so
         we never lose track of who is accountable for them.
+
+        With ``agente`` set, the robot runs on that machine, not in the
+        worker; the script path is then resolved by the agent, inside its
+        own approved folder. ``PROTECT`` stops an agent that still has
+        robots from being deleted: nobody finds out at run time that the
+        robot lost its machine.
     """
 
     class Status(models.TextChoices):
@@ -86,6 +98,14 @@ class Robo(models.Model):
         blank=True,
         validators=[MinValueValidator(1)],
         help_text="Quanto o robô costuma levar, em segundos (opcional).",
+    )
+    agente = models.ForeignKey(
+        "agents.Agente",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="robos",
+        help_text="Vazio: o robô roda no worker do Maestro.",
     )
     criado_em = models.DateTimeField(auto_now_add=True)
 

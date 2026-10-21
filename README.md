@@ -22,6 +22,7 @@ Primeiro produto da **ZV Labs**.
 - [Execução de robôs](#execução-de-robôs)
 - [Agendamento](#agendamento)
 - [Status do sistema e retenção](#status-do-sistema-e-retenção)
+- [Agentes](#agentes)
 - [Modelo de dados](#modelo-de-dados)
 - [Testes](#testes)
 - [Segurança](#segurança)
@@ -46,6 +47,7 @@ Primeiro produto da **ZV Labs**.
 - Estados visuais nas listas: rodando, agendado, pausado e parado, e a próxima execução de cada robô
 - Histórico global de execuções, com a origem de cada uma (manual ou agendamento), e tela de detalhe com duração, log numerado e linhas de erro destacadas
 - Log ao vivo na tela de detalhe, linha a linha, pelo WebSocket (Django Channels)
+- Agentes: cadastro na aba de configurações com token próprio, robôs que rodam em outra máquina e o protocolo do agente pelo WebSocket
 - Controle de acesso por grupos (Operador, Administrador RPA e Administrador do sistema)
 - Aba de configurações com gestão de usuários: criação, troca de grupo, desativação e reativação, com registro de todas as alterações
 - Status do sistema na aba de configurações: Redis, worker e agendador
@@ -55,7 +57,7 @@ Primeiro produto da **ZV Labs**.
 **Planejado**
 
 - Alertas de falha, tempo esgotado e atraso
-- Agente em Go para executar robôs em outras máquinas, conectado ao Maestro por WebSocket
+- Agente em Go, o programa que roda nas outras máquinas (o lado do Maestro já está pronto: veja [Agentes](#agentes))
 - API REST
 
 ---
@@ -73,15 +75,15 @@ flowchart LR
     W -->|status e log| DB
     W -->|linhas do log| C[(Redis<br/>Channels)]
     C -->|WebSocket| N[Navegador]
-    D -. WebSocket, planejado .-> A[Agente Go]
-    A -. executa .-> S2[Robô na máquina remota]
+    D <-->|WebSocket<br/>ws/agente/| A[Agente]
+    A -->|executa| S2[Robô na máquina remota]
 ```
 
 Quando um robô é iniciado, pelo botão ou por um agendamento, o disparo passa por uma única função, `disparar_execucao`, que aplica as regras, cria uma `Execucao` com status `pendente` e envia uma task para o Redis. O worker do Celery pega a task, executa o script do robô e grava o status final e o log no banco. Enquanto o robô roda, o worker publica as linhas do log no Django Channels, que as entrega por WebSocket a quem está com a tela de detalhe aberta.
 
 A cada minuto, o beat do Celery envia a tarefa que verifica os agendamentos vencidos e os dispara pelo mesmo caminho, e a tarefa que grava o pulso usado pelo status do sistema. Uma vez por dia, às 03:17, envia a limpeza do histórico.
 
-Na próxima fase, a execução passa para um **agente escrito em Go**, instalado na máquina onde os robôs vivem. O agente abre uma conexão WebSocket com o Maestro, recebe os comandos de iniciar e parar, executa o robô no ambiente dele e devolve status e log. O Django continua sendo o ponto central de cadastro, permissões e histórico; o robô continua sendo Python.
+Um robô também pode rodar num **agente**, instalado na máquina onde o robô vive. O agente abre uma conexão WebSocket com o Maestro, recebe os comandos de iniciar e parar, executa o robô no ambiente dele e devolve o log e como terminou. Robôs sem agente continuam no worker. O Django continua sendo o ponto central de cadastro, permissões e histórico; o robô continua sendo Python. O lado do Maestro está pronto e testado com um agente de referência em Python; o agente de produção será escrito em Go.
 
 ---
 
@@ -96,7 +98,7 @@ Na próxima fase, a execução passa para um **agente escrito em Go**, instalado
 | Fila e execução assíncrona | Celery + Redis | Em uso |
 | Agendamento | Celery beat, com uma tarefa própria (sem `django-celery-beat`) | Em uso |
 | Tempo real | Django Channels + `channels-redis`, servido pelo Daphne (WebSocket) | Em uso |
-| Execução remota | Agente em Go, pelo mesmo WebSocket | Planejado |
+| Execução remota | Agente pelo WebSocket `ws/agente/` | Lado do Maestro em uso; agente em Go planejado |
 | API | Django REST Framework + JWT | Planejado |
 
 ---
@@ -106,8 +108,15 @@ Na próxima fase, a execução passa para um **agente escrito em Go**, instalado
 ```
 maestro-zavan/
 ├── accounts/            # autenticação e painel
+├── agents/              # agentes: cadastro, token, protocolo e WebSocket do agente
+│   ├── comandos.py      # iniciar, parar e desconectar, enviados ao agente
+│   ├── consumers.py     # WebSocket do agente (ws/agente/)
+│   ├── protocolo.py     # o que fazer com cada mensagem do agente
+│   └── services.py      # criar agente, trocar token, desativar
 ├── robots/              # cadastro de robôs e disparo de execuções
 │   ├── forms.py
+│   ├── conclusao.py     # status final e nova tentativa, iguais para worker e agente
+│   ├── executor.py      # roda e acompanha o processo, sem Django
 │   ├── services.py      # disparar_execucao: o caminho único de disparo
 │   ├── tasks.py         # task que executa o robô
 │   └── views.py
@@ -131,6 +140,8 @@ maestro-zavan/
 │   ├── routing.py       # rotas de WebSocket
 │   ├── settings.py
 │   └── urls.py
+├── docs/agente/         # protocolo do agente (contrato para o agente em Go)
+├── tools/               # agente de referência em Python, para testes
 ├── scripts/             # pasta de robôs permitidos (ROBOS_SCRIPTS_DIR)
 │   └── robo_exemplo.py
 ├── static/
@@ -252,6 +263,12 @@ Acesse `http://localhost:8000/`.
 | `/configuracoes/` | Alguma permissão do app `config` | Aba de configurações |
 | `/configuracoes/retencao/` | `config.gerenciar_retencao` (POST) | Salva a retenção do histórico |
 | `/configuracoes/limites/` | `config.gerenciar_limites` (POST) | Salva os limites padrão de execução |
+| `/configuracoes/agentes/` | `config.gerenciar_agentes` | Lista e cadastro de agentes |
+| `/configuracoes/agentes/novo/` | `config.gerenciar_agentes` (POST) | Cria o agente e mostra o token uma vez |
+| `/configuracoes/agentes/<id>/token/` | `config.gerenciar_agentes` (POST) | Gera um token novo e derruba a conexão do antigo |
+| `/configuracoes/agentes/<id>/alternar/` | `config.gerenciar_agentes` (POST) | Desativa ou reativa o agente |
+| `ws/execucoes/<id>/` | Autenticado (WebSocket, sessão e origem) | Log ao vivo de uma execução |
+| `ws/agente/` | Token de agente (WebSocket) | Conexão do agente |
 | `/configuracoes/usuarios/` | `config.gerenciar_usuarios` | Usuários e acesso |
 | `/configuracoes/usuarios/novo/` | `config.gerenciar_usuarios` | Criação de usuário |
 | `/configuracoes/usuarios/<id>/grupo/` | `config.gerenciar_usuarios` (POST) | Troca de grupo |
@@ -277,6 +294,7 @@ Permissões próprias do projeto, além das que o Django cria para cada model:
 | `config.ver_status_sistema` | Status do sistema |
 | `config.gerenciar_retencao` | Retenção do histórico |
 | `config.gerenciar_limites` | Limites padrão de execução |
+| `config.gerenciar_agentes` | Cadastro de agentes e geração de tokens |
 
 Os grupos são definidos em `config/migrations/0002_grupos_de_acesso.py` e criados pelo `migrate`. As permissões são verificadas nas views: um usuário autenticado sem permissão recebe **403**, e não um redirecionamento para o login. Os botões correspondentes também são ocultados na interface, mas a proteção real é a da view.
 
@@ -396,6 +414,29 @@ O prazo (entre 7 e 3650 dias, padrão 90) é editado na própria aba. Todo dia �
 
 ---
 
+## Agentes
+
+Um agente é a máquina onde robôs rodam fora do worker do Maestro, por exemplo um servidor do cliente com as bibliotecas e os acessos que o robô precisa. O protocolo completo, que o agente em Go vai seguir, está em [`docs/agente/protocolo.md`](docs/agente/protocolo.md).
+
+- **Cadastro**: em configurações → agentes, com a permissão `config.gerenciar_agentes` (do grupo Administrador do sistema). Ao criar o agente, o token aparece uma única vez; o banco guarda só o hash SHA-256. Gerar um token novo invalida o antigo na hora e derruba a conexão aberta com ele. Agentes são desativados, nunca excluídos, e cada alteração fica no registro de acesso.
+- **Robô no agente**: no cadastro do robô, o campo "agente" diz em que máquina ele roda, e o caminho do script passa a ser relativo à pasta aprovada do agente. Um agente com robôs não pode ser excluído (`PROTECT`). Sem agente, o robô roda no worker, como antes.
+- **Conexão**: o agente conecta em `ws/agente/` com `Authorization: Bearer <token>` e manda um heartbeat a cada 30 s; ele está online enquanto o último sinal tiver menos de 90 s. Uma conexão nova do mesmo agente derruba a anterior.
+- **Disparo**: o mesmo `disparar_execucao` do botão e do agendador. Com agente, recusa se ele estiver offline e, depois do commit, manda `iniciar` ao agente em vez da task ao Celery.
+- **Execução**: o agente confirma com `iniciado` (o Maestro reivindica a execução como o worker faz), manda o log em lotes e termina com `fim`, informando só o motivo e o código de saída. O status final e a nova tentativa saem de `robots/conclusao.py`, as mesmas regras do worker.
+- **Parar**: com o agente online, marca o pedido e manda `parar`; com ele offline, a execução é cancelada na hora, para o robô não ficar travado.
+- **Validação**: toda mensagem do agente é validada; um agente só mexe nas execuções dos robôs dele, e mensagem inválida volta como `erro`, sem derrubar a conexão.
+
+Para testar sem o agente em Go, rode o agente de referência em Python:
+
+```bash
+export MAESTRO_URL=ws://localhost:8000/ws/agente/
+export MAESTRO_TOKEN=mae_...
+export AGENTE_PASTA_ROBOS=/caminho/dos/robos
+uv run python -m tools.agente_referencia
+```
+
+---
+
 ## Modelo de dados
 
 ### Robo
@@ -478,6 +519,11 @@ uv run manage.py test
 | `VerificarAgendamentosTest` | disparo no minuto certo, trava contra disparo duplo, pausados, dias desmarcados e robô em manutenção |
 | `ScheduleViewsTest` | acesso, permissões, criação, pausa e exclusão mantendo o histórico |
 | `ConfiguracaoSistemaTest` | registro único da configuração |
+| `AgenteModelTest` | só o hash do token é guardado, estado online pelo último sinal |
+| `ProtocoloTest` | autenticação, reivindicação, linhas numeradas, mensagens inválidas, fim com as regras do worker, nova tentativa no agente |
+| `AgenteConsumerTest` | recusa sem token, sinal ao conectar, repasse de comandos, uma conexão por agente (4409), erro de protocolo, parar para execução cancelada, fluxo completo |
+| `DisparoComAgenteTest` | agente offline recusa o disparo, iniciar vai ao agente e não ao worker, parar com agente online e offline |
+| `AgentViewsTest` | lista, 403 e 302, token mostrado uma vez e guardado como hash, nome repetido, novo token derruba a conexão, desativar e reativar, GET sem efeito, só agentes ativos no formulário do robô |
 | `ConfigHomeTest` | acesso à aba, menu e visibilidade de cada seção por permissão |
 | `ServicosDeAcessoTest` | troca de grupo, desativação, travas contra alteração do próprio acesso e de superusuários, registro |
 | `ConfigUsersViewsTest` | tela de usuários, permissões, recusas como mensagem e ações só por POST |
@@ -501,6 +547,9 @@ Os testes não precisam do Redis nem do worker: o `TestCase` do Django não disp
 - Nenhum caminho pela interface altera `is_superuser`; ninguém altera o próprio acesso
 - Alterações de acesso registradas e não editáveis
 - Execução de scripts restrita a uma pasta aprovada, sem `shell=True` e com tempo limite
+- WebSocket do navegador só para usuário logado e com validação de origem (`AllowedHostsOriginValidator`)
+- Agente autenticado por token no cabeçalho (nunca na URL), guardado só como hash, mostrado uma única vez e trocável a qualquer momento
+- O agente nunca recebe comando cru: só o identificador do robô, resolvido dentro da pasta aprovada dele
 - Log exibido com escape automático do Django (nunca com `|safe`)
 - Links externos com `rel="noopener noreferrer"`
 
@@ -524,12 +573,13 @@ Cadastro de robôs, execução em segundo plano, histórico com log, permissões
 
 - Pronto: tempo limite e novas tentativas por robô, "parar" que encerra o processo de verdade e limites padrão editáveis
 - Pronto: log ao vivo na tela de detalhe, com Django Channels
+- Pronto: lado do Maestro para o agente (cadastro, token, protocolo, disparo e parada), com agente de referência em Python
 - Alertas na tela quando um robô falha, estoura o tempo ou atrasa
 
 ### Depois
 
+- Agente em Go (próximo card), seguindo `docs/agente/protocolo.md`
 - Clientes e ambientes (servidor da ZV Labs, instalações do cliente ou os dois)
-- Agente em Go para executar robôs em outras máquinas
 - API REST (DRF + JWT, com limite de requisições)
 
 ---

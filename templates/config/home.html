@@ -32,6 +32,19 @@
   </section>
   {% endif %}
 
+  {% if perms.config.gerenciar_agentes %}
+  <section class="config-secao" id="agentes">
+    <header class="config-secao-cabecalho">
+      <h2>agentes</h2>
+      <p>Máquinas que rodam robôs fora do worker, conectadas por WebSocket.</p>
+    </header>
+    <p class="config-valor">
+      <strong>{{ agentes_online }}</strong> online de {{ agentes_ativos }} ativo{{ agentes_ativos|pluralize }}
+    </p>
+    <a href="{% url 'agent_list' %}" class="btn config-acao">gerenciar agentes</a>
+  </section>
+  {% endif %}
+
   {% if perms.config.ver_status_sistema %}
   <section class="config-secao" id="status">
     <header class="config-secao-cabecalho">

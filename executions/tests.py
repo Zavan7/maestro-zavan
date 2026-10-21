@@ -14,10 +14,11 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.db.models import ProtectedError
 from django.test import Client, TestCase
+from django.urls import path
 
 from executions.ao_vivo import publicar_fim, publicar_linhas
+from executions.consumers import ExecucaoConsumer
 from executions.models import Execucao
-from executions.routing import websocket_urlpatterns
 from robots.models import Robo
 
 User = get_user_model()
@@ -268,16 +269,18 @@ class LogAoVivoViewTest(TestCase):
 class ExecucaoConsumerTest(TestCase):
     """Testes do WebSocket que leva o log ao navegador.
 
-    O ``WebsocketCommunicator`` conversa com o consumer sem servidor; o
-    usuário é posto direto no ``scope``, no lugar do que o
-    ``AuthMiddlewareStack`` leria da sessão. Nos testes, a camada de
+    O ``WebsocketCommunicator`` conversa com o consumer sem servidor. O
+    consumer é montado sem as proteções do navegador, e o usuário é posto
+    direto no ``scope``, no lugar do que o ``AuthMiddlewareStack`` leria
+    da sessão. Nos testes, a camada de
     canais é a em memória.
 
     English:
         Tests for the WebSocket that carries the log to the browser.
 
-        ``WebsocketCommunicator`` talks to the consumer without a server;
-        the user is put straight into the ``scope``, instead of what
+        ``WebsocketCommunicator`` talks to the consumer without a server.
+        The consumer is mounted without the browser protections, and the
+        user is put straight into the ``scope``, instead of what
         ``AuthMiddlewareStack`` would read from the session. In tests, the
         channel layer is the in-memory one.
     """
@@ -308,7 +311,9 @@ class ExecucaoConsumerTest(TestCase):
             the scope.
         """
         comunicador = WebsocketCommunicator(
-            URLRouter(websocket_urlpatterns),
+            URLRouter(
+                [path("ws/execucoes/<int:pk>/", ExecucaoConsumer.as_asgi())]
+            ),
             f"/ws/execucoes/{pk or self.execucao.pk}/",
         )
         comunicador.scope["user"] = usuario

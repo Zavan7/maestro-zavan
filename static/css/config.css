@@ -165,3 +165,31 @@
 .config-campos .btn {
   align-self: flex-start;
 }
+
+.config-intro {
+  max-width: 760px;
+  margin-bottom: 1.5rem;
+}
+
+.token-agente {
+  max-width: 760px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.token-valor,
+.token-config {
+  display: block;
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.85rem;
+  color: var(--accent-text);
+  word-break: break-all;
+  white-space: pre-wrap;
+  user-select: all;
+}
