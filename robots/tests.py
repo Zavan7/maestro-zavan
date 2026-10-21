@@ -13,6 +13,7 @@ from django.test import Client, TestCase
 from executions.models import Execucao
 from robots.models import Robo
 from robots.services import DisparoRecusado, disparar_execucao
+from robots.tasks import executar_robo
 
 User = get_user_model()
 
@@ -332,3 +333,132 @@ class DisparoTest(TestCase):
                 tarefa.delay.assert_not_called()
 
         tarefa.delay.assert_called_once_with(execucao.id)
+
+
+class PararExecucaoTest(TestCase):
+    """Testes do botão "parar" e da reivindicação feita pela tarefa.
+
+    English:
+        Tests for the "stop" button and the claim made by the task.
+    """
+
+    def setUp(self):
+        """Cria um operador com executar_robo e um robô, e faz login.
+
+        English:
+            Creates an operator with executar_robo and a robot, and logs
+            in.
+        """
+        self.client = Client()
+        self.usuario = User.objects.create_user(
+            username="operador", password="senha123"
+        )
+        self.usuario.user_permissions.add(
+            Permission.objects.get(codename="executar_robo")
+        )
+        self.robo = Robo.objects.create(
+            nome="coleta-notas",
+            caminho_script="robo_exemplo.py",
+            responsavel=self.usuario,
+        )
+        self.url = f"/robots/{self.robo.pk}/parar/"
+        self.client.login(username="operador", password="senha123")
+
+    def test_cancela_execucao_pendente(self):
+        """Uma execução pendente é cancelada como falha, com o motivo no log.
+
+        English:
+            A pending execution is cancelled as a failure, with the reason
+            in the log.
+        """
+        execucao = Execucao.objects.create(robo=self.robo)
+
+        response = self.client.post(self.url, follow=True)
+
+        execucao.refresh_from_db()
+        self.assertEqual(execucao.status, Execucao.Status.FALHA)
+        self.assertIsNotNone(execucao.finalizado_em)
+        self.assertEqual(
+            execucao.log, "Cancelada antes de iniciar por operador."
+        )
+        self.assertContains(response, "Execução pendente de &#x27;")
+
+    def test_tarefa_nao_roda_execucao_cancelada(self):
+        """Se a execução já não está pendente, a tarefa não roda o script.
+
+        English:
+            If the execution is no longer pending, the task does not run
+            the script.
+        """
+        execucao = Execucao.objects.create(robo=self.robo)
+        self.client.post(self.url)
+
+        with mock.patch("robots.tasks.subprocess.run") as rodar:
+            executar_robo(execucao.pk)
+
+        rodar.assert_not_called()
+        execucao.refresh_from_db()
+        self.assertEqual(execucao.status, Execucao.Status.FALHA)
+
+    def test_tarefa_reivindica_execucao_pendente(self):
+        """Uma execução pendente é reivindicada e o script roda.
+
+        English:
+            A pending execution is claimed and the script runs.
+        """
+        execucao = Execucao.objects.create(robo=self.robo)
+        concluido = mock.Mock(returncode=0, stdout="ok\n", stderr="")
+
+        with mock.patch(
+            "robots.tasks.subprocess.run", return_value=concluido
+        ) as rodar:
+            executar_robo(execucao.pk)
+
+        rodar.assert_called_once()
+        execucao.refresh_from_db()
+        self.assertEqual(execucao.status, Execucao.Status.SUCESSO)
+        self.assertIsNotNone(execucao.iniciado_em)
+
+    def test_marca_execucao_rodando_como_finalizada(self):
+        """Uma execução rodando é marcada como finalizada.
+
+        English:
+            A running execution is marked as finished.
+        """
+        execucao = Execucao.objects.create(
+            robo=self.robo, status=Execucao.Status.RODANDO
+        )
+
+        self.client.post(self.url)
+
+        execucao.refresh_from_db()
+        self.assertEqual(execucao.status, Execucao.Status.SUCESSO)
+        self.assertIsNotNone(execucao.finalizado_em)
+
+    def test_sem_execucao_em_andamento_mostra_erro(self):
+        """Sem execução em andamento, a tela mostra uma mensagem de erro.
+
+        English:
+            With no execution in progress, the page shows an error
+            message.
+        """
+        response = self.client.post(self.url, follow=True)
+
+        self.assertContains(response, "não tem execução em andamento")
+
+    def test_sem_permissao_recebe_403(self):
+        """Sem executar_robo, parar responde 403 e nada muda.
+
+        English:
+            Without executar_robo, stopping answers 403 and nothing
+            changes.
+        """
+        execucao = Execucao.objects.create(robo=self.robo)
+        User.objects.create_user(username="visitante", password="senha123")
+        self.client.login(username="visitante", password="senha123")
+
+        response = self.client.post(self.url)
+
+        self.assertEqual(response.status_code, 403)
+        execucao.refresh_from_db()
+        self.assertEqual(execucao.status, Execucao.Status.PENDENTE)

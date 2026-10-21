@@ -5,6 +5,8 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 ## [Não lançado]
 
+## [1.1.0] - 2026-10-21
+
 ### Adicionado
 
 - Agendamento recorrente de robôs por horário e dias da semana, com pausar e retomar
@@ -25,9 +27,14 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 - Iniciar e parar robôs passa a exigir a permissão `executar_robo`; antes bastava estar logado
 - Os grupos de acesso passam a ser criados por uma migração de dados, sem comandos manuais
 - Quem não está logado e abre uma página da aba de configurações vai para o login, em vez de receber 403
+- Removido o `main.py` que sobrou da criação do projeto e não era usado
 
 ### Corrigido
 
+- O botão "parar" ignorava execuções pendentes: uma execução presa na fila (worker parado) travava o robô até alguém mexer no banco. Agora ela é cancelada, com o motivo no log
+- O worker rodava a execução mesmo que ela já não estivesse pendente; agora ele a reivindica com um `UPDATE` condicional e ignora as canceladas ou repetidas
+- Os testes falhavam num clone novo sem `.env` (`SECRET_KEY` vazia); em desenvolvimento e nos testes passa a valer uma chave fixa, e fora disso a falta da chave impede o Maestro de subir, com o motivo
+- O arquivo de exemplo de ambiente se chamava `.env.exemple` e não tinha `CELERY_BROKER_URL` nem `ROBOS_SCRIPTS_DIR`; agora é `.env.example`, completo
 - A tela de cadastro de robô exibia o formulário de edição
 - O CSS da tela de detalhe de execução não era carregado
 - O cabeçalho das páginas ficava sem estilo nas telas que não carregavam o CSS de robôs
@@ -36,6 +43,11 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 - Um usuário sem grupo não consegue mais iniciar ou parar robôs
 - Ninguém altera o próprio acesso pela aba de configurações, e superusuários só podem ser alterados por outro superusuário
+
+### Limitações conhecidas
+
+- Para uma execução rodando, o botão "parar" marca a execução como finalizada, mas não encerra o processo
+- Os robôs rodam com as dependências do ambiente do Maestro
 
 ## [1.0.0] - 2026-09-28
 

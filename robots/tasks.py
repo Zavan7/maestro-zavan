@@ -73,12 +73,16 @@ def _resolver_script(caminho: str) -> Path:
 
 
 @shared_task
-def executar_robo(execucao_id):
+def executar_robo(execucao_id: int) -> None:
     """Roda o script do robô e grava o resultado na execução.
 
     Fluxo:
 
-    1. Marca a execução como ``RODANDO`` e anota o início.
+    1. Reivindica a execução: um ``UPDATE`` condicional troca
+       ``PENDENTE`` por ``RODANDO`` e anota o início. Se nada foi
+       atualizado, a execução já não está pendente (foi cancelada pelo
+       botão "parar" antes de o worker chegar nela, ou a tarefa chegou
+       duas vezes) e a tarefa termina sem rodar o script.
     2. Roda o script com o mesmo Python do Maestro (``sys.executable``),
        numa lista de argumentos e sem ``shell=True``, o que evita injeção
        de comandos.
@@ -96,7 +100,12 @@ def executar_robo(execucao_id):
 
         Flow:
 
-        1. Marks the execution as ``RODANDO`` and records the start time.
+        1. Claims the execution: a conditional ``UPDATE`` swaps
+           ``PENDENTE`` for ``RODANDO`` and records the start time. If
+           nothing was updated, the execution is no longer pending (it
+           was cancelled with the "stop" button before the worker got to
+           it, or the task arrived twice) and the task ends without
+           running the script.
         2. Runs the script with Maestro's own Python (``sys.executable``),
            as an argument list and without ``shell=True``, which prevents
            command injection.
@@ -110,10 +119,13 @@ def executar_robo(execucao_id):
         Args:
             execucao_id: id of the pending ``Execucao`` to process.
     """
+    reivindicada = Execucao.objects.filter(
+        pk=execucao_id, status=Execucao.Status.PENDENTE
+    ).update(status=Execucao.Status.RODANDO, iniciado_em=timezone.now())
+    if not reivindicada:
+        return
+
     execucao = Execucao.objects.select_related("robo").get(pk=execucao_id)
-    execucao.status = Execucao.Status.RODANDO
-    execucao.iniciado_em = timezone.now()
-    execucao.save(update_fields=["status", "iniciado_em"])
 
     try:
         script = _resolver_script(execucao.robo.caminho_script)
