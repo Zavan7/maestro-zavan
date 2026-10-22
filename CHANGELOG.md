@@ -25,7 +25,11 @@ Correções da varredura de segurança. As marcadas com **(quebra)** mudam o com
 
 ### Documentação
 
-- Tutorial no README, do zero ao primeiro robô: subir com Docker, escrever e cadastrar o robô, rodar com log ao vivo, agendar, dar acesso à equipe, instalar o agente em outra máquina e resolver os problemas mais comuns
+- Tutorial no README para rodar o Maestro localmente: pré-requisitos, instalação, `.env`, banco, os dois processos, conferência pelo status do sistema, dia a dia, problemas comuns e diferenças para produção; substitui a antiga seção "Como rodar localmente"
+
+### Removido
+
+- `scripts/robo_exemplo.py`, o robô usado nos testes manuais. A pasta `scripts/` continua sendo o padrão de `ROBOS_SCRIPTS_DIR`, mas fica fora do Git, para os robôs locais de cada um
 - README atualizado com o agente em Go, o Docker e o django-axes na stack e na estrutura do projeto
 
 ### Adicionado

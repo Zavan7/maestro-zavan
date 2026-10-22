@@ -8,18 +8,17 @@ Primeiro produto da **ZV Labs**.
 
 **Versão atual:** 1.1.0. Veja o [CHANGELOG](CHANGELOG.md).
 
-**Começando agora?** Vá direto ao [tutorial](#tutorial-do-zero-ao-primeiro-robô): em 15 minutos você sobe o Maestro, cadastra um robô e acompanha a primeira execução.
+**Começando agora?** Siga o [tutorial](#tutorial-rodar-o-maestro-localmente): em uns 10 minutos o Maestro está rodando na sua máquina.
 
 ---
 
 ## Sumário
 
-- [Tutorial: do zero ao primeiro robô](#tutorial-do-zero-ao-primeiro-robô)
+- [Tutorial: rodar o Maestro localmente](#tutorial-rodar-o-maestro-localmente)
 - [Funcionalidades](#funcionalidades)
 - [Arquitetura](#arquitetura)
 - [Stack](#stack)
 - [Estrutura do projeto](#estrutura-do-projeto)
-- [Como rodar localmente](#como-rodar-localmente)
 - [Como rodar com Docker](#como-rodar-com-docker)
 - [Rotas](#rotas)
 - [Perfis e permissões](#perfis-e-permissões)
@@ -36,150 +35,147 @@ Primeiro produto da **ZV Labs**.
 
 ---
 
-## Tutorial: do zero ao primeiro robô
+## Tutorial: rodar o Maestro localmente
 
-Este passo a passo leva uns 15 minutos. No fim, você terá o Maestro rodando, um robô cadastrado, uma execução com o log ao vivo, um agendamento e um colega com acesso. Os detalhes técnicos de cada parte estão nas seções seguintes do README; aqui está só o caminho.
+Passo a passo para ter o Maestro rodando na sua máquina, do clone até a tela de login com tudo verde. Leva uns 10 minutos. Os comandos são para Linux e macOS; no Windows, use o [WSL](https://learn.microsoft.com/windows/wsl/install).
 
-### Passo 1: subir o Maestro
+> Prefere não instalar nada além do Docker? Veja [Como rodar com Docker](#como-rodar-com-docker).
 
-O jeito mais simples é o Docker, que sobe tudo de uma vez (Maestro, fila, worker e agendador). Você precisa do [Docker](https://docs.docker.com/get-docker/) com o plugin `compose`.
+### Passo 1: instalar o que falta
+
+Você precisa de três coisas:
+
+| O quê | Para quê | Como conferir |
+|---|---|---|
+| [Git](https://git-scm.com/downloads) | baixar o código | `git --version` |
+| [uv](https://docs.astral.sh/uv/getting-started/installation/) | instalar o Python 3.14 e as dependências | `uv --version` |
+| Redis | fila de tarefas e log ao vivo | `redis-cli ping` responde `PONG` |
+
+Não é preciso instalar o Python à parte: o uv baixa a versão certa (3.14, definida em `.python-version`) sozinho.
+
+Para instalar o uv:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Para instalar e ligar o Redis:
+
+```bash
+# Ubuntu / Debian / WSL
+sudo apt install redis-server
+sudo systemctl enable --now redis-server
+
+# macOS (Homebrew)
+brew install redis
+brew services start redis
+```
+
+Confira com `redis-cli ping`: a resposta deve ser `PONG`.
+
+### Passo 2: baixar o código e as dependências
 
 ```bash
 git clone https://github.com/Zavan7/maestro-zavan.git
 cd maestro-zavan
-cp .env.example .env
-docker compose up -d --build
+uv sync
 ```
 
-Com `DEBUG=True`, que já vem no `.env.example`, não é preciso preencher a `SECRET_KEY` para testar. Quando os containers subirem, crie o seu usuário administrador:
+O `uv sync` cria o ambiente virtual em `.venv` e instala tudo o que está no `uv.lock`. Daqui em diante, todo comando começa com `uv run`, que usa esse ambiente sem precisar ativá-lo.
+
+### Passo 3: criar o `.env`
 
 ```bash
-docker compose exec web python manage.py createsuperuser
+cp .env.example .env
 ```
 
-> Prefere rodar sem Docker? Siga [Como rodar localmente](#como-rodar-localmente) e volte para o passo 2.
+Para desenvolvimento, o `.env` copiado já funciona como está:
 
-### Passo 2: entrar
-
-Abra **http://localhost:8000/login/** e entre com o usuário que você acabou de criar. Você cai no **painel**, que mostra os robôs por status, a atividade dos últimos 14 dias e as execuções recentes. Por enquanto ele está vazio.
-
-À esquerda fica o menu: **início**, **robôs**, **execuções**, **agendamentos** e **configurações**.
-
-### Passo 3: escrever o script do robô
-
-Um robô é um script Python comum, dentro da pasta de robôs aprovados. Sem configuração, essa pasta é a `scripts/` do projeto, que já traz o `robo_exemplo.py`. Para um robô seu, crie por exemplo `scripts/ola/main.py`:
-
-```python
-import logging
-import os
-import sys
-
-logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-log = logging.getLogger("ola")
-
-log.info("Olá, Maestro!")
-cliente = os.getenv("ROBO_CLIENTE", "ninguém")
-log.info("Trabalhando para %s", cliente)
-
-if cliente == "ninguém":
-    log.error("Defina ROBO_CLIENTE no .env")
-    sys.exit(1)  # código diferente de 0 = falha
-```
-
-Três regras valem para qualquer robô:
-
-1. **Tudo o que ele escreve vira log.** `print`, `logging` e erros, linha a linha. Linhas com `ERROR` ou `Traceback` aparecem destacadas.
-2. **Terminar com código 0 é sucesso; qualquer outro, falha.** Uma exceção não tratada também vira falha.
-3. **O robô não vê o `.env` do Maestro.** Só passam variáveis básicas do sistema e as que começam com `ROBO_`. Para entregar uma configuração ou senha ao robô, coloque-a no `.env` com esse prefixo, por exemplo `ROBO_CLIENTE=ZV Labs`, e reinicie o worker (`docker compose restart worker`).
-
-Se o robô tem dependências, coloque na pasta dele um `requirements.txt` ou o projeto do seu gerenciador (`uv`, `poetry`, `pdm` ou `pipenv`). O Maestro detecta qual é e instala tudo antes de cada execução; veja [Dependências de cada robô](#dependências-de-cada-robô).
-
-### Passo 4: cadastrar o robô
-
-Vá em **robôs → + novo robô** e preencha:
-
-| Campo | O que colocar | Exemplo |
+| Variável | Valor no exemplo | Observação |
 |---|---|---|
-| nome | um nome curto e único | `ola` |
-| descrição | o que o robô faz (opcional) | `Primeiro teste` |
-| caminho do script | o caminho **relativo** à pasta de robôs | `ola/main.py` |
-| status | `Ativo` para poder rodar; `Manutenção` ou `Inativo` impedem o disparo | `Ativo` |
-| tempo máximo (segundos) | depois disso, a execução é encerrada e vira falha; vazio usa o padrão (300 s) | `60` |
-| novas tentativas após falha | quantas vezes repetir se falhar (0 a 5) | `0` |
-| duração esperada (segundos) | só informativo (opcional) | `5` |
-| agente | deixe em **nenhum (worker do Maestro)**; agentes ficam no [passo 8](#passo-8-opcional-rodar-robôs-em-outra-máquina) | — |
+| `DEBUG` | `True` | modo de desenvolvimento |
+| `SECRET_KEY` | vazio | com `DEBUG=True`, uma chave fixa de desenvolvimento é usada |
+| `ALLOWED_HOSTS` | `localhost,127.0.0.1` | endereços aceitos |
+| `CELERY_BROKER_URL` | `redis://localhost:6379/0` | o Redis do passo 1 |
 
-Clique em **salvar**. O robô aparece na lista com o estado **parado**.
+As outras variáveis do arquivo são opcionais e vêm comentadas, com a explicação ao lado. Com `DEBUG=False`, a `SECRET_KEY` passa a ser obrigatória; para gerar uma:
 
-### Passo 5: rodar e acompanhar
+```bash
+uv run python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+```
 
-1. Na lista de robôs, clique em **iniciar**. O estado muda para **rodando**.
-2. Abra **execuções** e clique na execução mais recente. O log aparece **ao vivo**, linha a linha, sem recarregar a página.
-3. Quando o robô termina, a tela mostra o status final (**sucesso** ou **falha**), a duração e o log completo.
+### Passo 4: preparar o banco e criar o seu usuário
 
-Se você não definiu `ROBO_CLIENTE`, a execução termina em **falha** com a linha de erro destacada. Defina a variável, reinicie o worker e rode de novo para ver o **sucesso**.
+```bash
+uv run manage.py migrate
+uv run manage.py createsuperuser
+```
 
-Para interromper um robô no meio, clique em **parar** na lista de robôs. Ele recebe um aviso para encerrar e, se não encerrar em 5 segundos, é finalizado à força, junto com navegadores e outros processos que tenha aberto. A execução fica como **cancelada**.
+O `migrate` cria o banco SQLite (`db.sqlite3`) e os três grupos de acesso com as permissões certas. O `createsuperuser` pergunta usuário, e-mail (pode deixar vazio) e senha.
 
-### Passo 6: agendar
+### Passo 5: ligar o Maestro
 
-Vá em **agendamentos → + novo agendamento**, escolha o **robô**, o **horário** e marque os **dias da semana**. Clique em **salvar**.
+São dois processos. Abra **dois terminais** na pasta do projeto.
 
-A partir daí, o robô dispara sozinho nesses dias e horário (fuso de São Paulo), e a execução aparece no histórico com a etiqueta **agendado**. Para suspender sem apagar, use **⏸ pausar**; para voltar, **retomar**.
+**Terminal 1**, o site:
 
-### Passo 7: dar acesso à equipe
+```bash
+uv run manage.py runserver
+```
 
-Vá em **configurações → gerenciar usuários → + novo usuário**, preencha os dados e escolha o grupo:
+Espere a linha `Starting ASGI/Daphne ... at http://127.0.0.1:8000/`.
 
-| Grupo | Para quem |
+**Terminal 2**, o worker, que executa os robôs e os agendamentos:
+
+```bash
+uv run celery -A maestro worker -B --loglevel=info
+```
+
+Espere a linha `celery@... ready.`.
+
+### Passo 6: conferir
+
+1. Abra **http://localhost:8000/login/** e entre com o usuário do passo 4.
+2. Vá em **configurações** e olhe o **status do sistema**. Deve aparecer:
+   - **fila (Redis)**: `respondendo`;
+   - **worker**: `1 ativo` (é o terminal 2);
+   - **agendador**: `último sinal há Ns` (é o `-B` do terminal 2). Logo depois de ligar, pode levar até um minuto para o primeiro sinal; use **↻ verificar de novo**;
+   - **agentes**: `nenhum cadastrado`, o que é normal: agentes são opcionais.
+
+Com os três primeiros assim, o Maestro está pronto.
+
+### No dia a dia
+
+| Para | Faça |
 |---|---|
-| **Operador** | quem acompanha e dispara robôs: vê robôs, execuções e agendamentos; inicia e para |
-| **Administrador RPA** | quem cria robôs: tudo do Operador, mais cadastrar, editar e excluir robôs e agendamentos |
-| **Administrador do sistema** | quem cuida do Maestro: usuários, agentes, status, retenção e limites; também inicia e para robôs |
-
-Na lista de usuários dá para trocar o grupo, desativar e reativar. Ninguém altera o próprio acesso, e cada um só concede grupos cujas permissões já tem. Tudo fica registrado.
-
-### Passo 8 (opcional): rodar robôs em outra máquina
-
-Quando o robô precisa rodar em outro computador (um servidor do cliente, uma máquina com o sistema que ele automatiza), instale lá o **agente**:
-
-1. No Maestro, vá em **configurações → gerenciar agentes**, dê um nome e clique em **criar agente**. **Copie o token** que aparece: ele é mostrado uma única vez.
-2. Na outra máquina, com [Go 1.24+](https://go.dev/dl/) instalado, compile o agente:
-
-   ```bash
-   cd maestro-zavan/agente-go
-   go build -o agente .
-   ```
-
-3. Configure e rode:
-
-   ```bash
-   export MAESTRO_URL=wss://maestro.suaempresa.com/ws/agente/
-   export MAESTRO_TOKEN=mae_...                 # o token copiado
-   export AGENTE_PASTA_ROBOS=/opt/robos         # a pasta dos robôs nesta máquina
-   ./agente
-   ```
-
-   Para testar com o Maestro na mesma máquina, use `MAESTRO_URL=ws://localhost:8000/ws/agente/`. Fora dela, use `wss://`: o agente recusa `ws://` para outro host, porque o token iria sem criptografia.
-
-4. Em **configurações → gerenciar agentes**, o agente aparece **online**. Agora edite o robô e escolha esse agente no campo **agente**. O caminho do script passa a ser relativo à `AGENTE_PASTA_ROBOS`.
-
-O resto não muda: iniciar, parar, log ao vivo, agendamentos e histórico funcionam do mesmo jeito. Credenciais `ROBO_*` desses robôs ficam no ambiente do agente. No Docker, o agente já vem no `docker-compose.yml`; veja [Agente no Docker](#agente-no-docker).
+| Desligar | `Ctrl+C` nos dois terminais |
+| Ligar de novo | só o passo 5 |
+| Atualizar o código | `git pull`, `uv sync` e `uv run manage.py migrate` |
+| Aplicar mudanças no site | nada: o `runserver` recarrega sozinho |
+| Aplicar mudanças em tarefas ou models | reinicie o worker (`Ctrl+C` e o comando de novo), porque ele não recarrega sozinho |
+| Rodar os testes | `uv run manage.py test` (não precisa do Redis nem do worker) |
 
 ### Se algo der errado
 
-| Sintoma | O que verificar |
+| Sintoma | O que fazer |
 |---|---|
-| O botão **iniciar** não aparece | Seu usuário não tem permissão para iniciar robôs; peça o grupo Operador |
-| "robô está inativo" ou "robô está manutenção" | Edite o robô e mude o status para `Ativo` |
-| "já tem uma execução em andamento" | O robô só roda uma vez por vez; espere terminar ou clique em **parar** |
-| A execução fica em **pendente** | O worker está parado. Veja **configurações → status do sistema** e, no Docker, `docker compose logs worker` |
-| Falha com "Script não encontrado" ou "Script fora do diretório permitido" | O caminho do script deve ser relativo à pasta de robôs, sem `/` no começo nem `../` |
-| Falha com `ambiente_invalido` | A ferramenta de dependências do robô (uv, poetry...) não está instalada onde ele roda |
-| O robô não acha uma variável | Ela precisa começar com `ROBO_`, e o worker (ou o agente) precisa ser reiniciado |
-| "o agente '...' está offline" | O agente não está conectado: confira o token, a `MAESTRO_URL` e o log do agente |
-| Login bloqueado | Foram 5 senhas erradas seguidas; espere 15 minutos ou peça a um administrador para redefinir a senha |
-| **403** ao abrir uma tela | Falta a permissão daquela tela; veja [Perfis e permissões](#perfis-e-permissões) |
+| `redis-cli ping` não responde `PONG` | O Redis não está ligado: `sudo systemctl start redis-server` (Linux) ou `brew services start redis` (macOS) |
+| `Error 111 connecting to localhost:6379` no worker | Mesmo caso: o Redis está desligado |
+| `Defina SECRET_KEY no .env` | Falta o `.env` (passo 3) ou ele está com `DEBUG=False` e sem `SECRET_KEY` |
+| `That port is already in use` | Já há algo na porta 8000 (outro `runserver` ou o Docker do Maestro). Pare-o ou use `uv run manage.py runserver 8001` |
+| `no such table` ao abrir o site | Faltou o `uv run manage.py migrate` |
+| "nenhum worker respondeu" no status | O terminal 2 não está rodando |
+| "nenhum sinal recente" no agendador | O worker foi iniciado sem o `-B`, ou ainda não passou um minuto |
+| Execuções presas em **pendente** | O worker está parado (veja a linha acima) |
+| "Tentativas demais com senha errada" no login | Foram 5 senhas erradas seguidas; espere 15 minutos |
+
+### Em produção
+
+O passo 5 é o jeito de desenvolvimento. Em produção:
+
+- o site roda no próprio Daphne: `uv run daphne maestro.asgi:application`;
+- o beat roda como processo separado e único: `uv run celery -A maestro beat --loglevel=info`, e o worker sem o `-B`;
+- o `.env` leva `DEBUG=False`, uma `SECRET_KEY` própria e as variáveis de HTTPS (veja o `.env.example` e [Segurança](#segurança)).
 
 ---
 
@@ -301,8 +297,7 @@ maestro-zavan/
 │   └── urls.py
 ├── docs/agente/         # protocolo do agente (contrato para o agente em Go)
 ├── tools/               # agente de referência em Python, para testes
-├── scripts/             # pasta de robôs permitidos (ROBOS_SCRIPTS_DIR)
-│   └── robo_exemplo.py
+├── scripts/             # robôs locais, fora do Git (padrão de ROBOS_SCRIPTS_DIR)
 ├── static/
 │   ├── css/
 │   └── img/
@@ -320,83 +315,6 @@ maestro-zavan/
 ├── manage.py
 └── pyproject.toml
 ```
-
----
-
-## Como rodar localmente
-
-### Pré-requisitos
-
-- Python 3.14
-- [uv](https://docs.astral.sh/uv/)
-- Redis
-
-No Ubuntu:
-
-```bash
-sudo apt install redis-server
-sudo systemctl enable --now redis-server
-redis-cli ping   # deve responder PONG
-```
-
-### Instalação
-
-```bash
-git clone <url-do-repositorio>
-cd maestro-zavan
-uv sync
-```
-
-Crie o `.env` a partir do exemplo e ajuste os valores:
-
-```bash
-cp .env.example .env
-```
-
-```
-SECRET_KEY=
-DEBUG=True
-ALLOWED_HOSTS=localhost,127.0.0.1
-CELERY_BROKER_URL=redis://localhost:6379/0
-# ROBOS_SCRIPTS_DIR=/caminho/absoluto/para/scripts
-```
-
-`ROBOS_SCRIPTS_DIR` é opcional. Sem ele, o Maestro usa a pasta `scripts/` do projeto.
-
-Com `DEBUG=True`, ou rodando `manage.py test`, uma `SECRET_KEY` vazia é trocada por uma chave fixa de desenvolvimento, então um clone novo roda os testes sem `.env`. Fora disso, sem `SECRET_KEY` o Maestro não sobe e avisa o motivo. Para gerar uma chave:
-
-```bash
-uv run python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
-```
-
-Prepare o banco:
-
-```bash
-uv run manage.py migrate
-uv run manage.py createsuperuser
-```
-
-O `migrate` também cria os três grupos de acesso com as permissões certas. Não é preciso nenhum comando manual.
-
-### Execução
-
-São dois processos, cada um em um terminal:
-
-```bash
-uv run manage.py runserver
-```
-
-Com o `daphne` em `INSTALLED_APPS`, o `runserver` é o do Daphne e atende HTTP e WebSocket (a mensagem de início diz "Starting ASGI/Daphne"). Em produção, o servidor é o próprio Daphne: `uv run daphne maestro.asgi:application`.
-
-```bash
-uv run celery -A maestro worker -B --loglevel=info
-```
-
-O `-B` roda o agendador (beat) junto com o worker, o que basta em desenvolvimento. Em produção, o beat roda como processo separado e único: `uv run celery -A maestro beat --loglevel=info`.
-
-O worker não recarrega sozinho: depois de alterar models ou tarefas, reinicie-o.
-
-Acesse `http://localhost:8000/`.
 
 ---
 
@@ -544,7 +462,9 @@ Regras aplicadas no disparo, em `robots/services.py`, valendo para o botão e pa
 
 ### Onde ficam os scripts
 
-O campo `caminho_script` de um robô é **relativo** à pasta definida em `ROBOS_SCRIPTS_DIR`. Exemplos válidos: `robo_exemplo.py`, `coleta_notas/main.py`.
+O campo `caminho_script` de um robô é **relativo** à pasta definida em `ROBOS_SCRIPTS_DIR`. Exemplos válidos: `coleta.py`, `coleta_notas/main.py`.
+
+Sem `ROBOS_SCRIPTS_DIR`, a pasta é `scripts/`, na raiz do projeto. Ela não vem no repositório e fica fora do Git: crie-a para os seus robôs de desenvolvimento.
 
 Caminhos absolutos ou que tentem sair dessa pasta (como `../outro/script.py`) são recusados e a execução termina como falha. Essa pasta funciona como a lista de scripts aprovados: o cadastro de um robô só aponta para um script dentro dela, nunca decide livremente o que executar.
 
