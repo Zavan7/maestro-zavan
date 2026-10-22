@@ -183,3 +183,6 @@ agente.env
 
 # Binário do agente em Go (gerado por go build)
 agente-go/agente
+
+# Robôs locais de desenvolvimento (pasta padrão de ROBOS_SCRIPTS_DIR)
+/scripts/
