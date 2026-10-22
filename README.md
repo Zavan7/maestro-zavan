@@ -263,9 +263,11 @@ O código é montado em `/app`, e o `db.sqlite3` é o mesmo do host. Web e worke
 2. Copie `agente.env.example` para `agente.env` e cole o token. Ele fica separado do `.env` para não chegar ao worker, que repassa o próprio ambiente aos robôs.
 3. No `.env`, aponte a pasta dos robôs do host com `AGENTE_ROBOS_HOST=/caminho/dos/robos`. Ela é montada em `/robos`, então o caminho do robô no cadastro continua relativo a ela.
 4. Rode `docker compose up -d agente`.
-5. Baixe os navegadores do Playwright dos robôs (uma vez por versão do Playwright): `docker compose exec agente instalar-navegadores`.
+5. Baixe os navegadores do Playwright dos robôs (uma vez por versão do Playwright): `docker compose exec agente instalar-navegadores`. Ele acha os robôs que dependem do Playwright, qualquer que seja o gerenciador, e instala no ambiente de cada um.
 
-No container, cada robô ganha um venv próprio no volume `agente-dados` (`AGENTE_PASTA_VENVS`), e o `.venv` da pasta do robô no host não é tocado. Não há tela no container: robôs com Playwright precisam rodar com `headless=True`.
+As imagens do worker e do agente já trazem uv, poetry, pdm e pipenv (versões fixas no topo de cada Dockerfile), então robôs de qualquer uma dessas ferramentas rodam sem instalar nada. No container do agente, o ambiente de cada robô fica no volume `agente-dados` (`AGENTE_PASTA_VENVS`); no do worker, no volume `worker-robos` (`ROBOS_PASTA_VENVS`). O `.venv` da pasta do robô no host não é tocado. Não há tela no container: robôs com Playwright precisam rodar com `headless=True`.
+
+Para preparar o ambiente de um robô à mão e rodar o Python dele: `docker compose exec agente agente ambiente coleta -- -c "import playwright"` (a pasta é relativa a `/robos`).
 
 Comandos úteis:
 
@@ -414,9 +416,22 @@ O Channels usa o Redis no banco 1 (`CHANNELS_REDIS_URL`, padrão `redis://localh
 
 Mudanças nos limites valem a partir da próxima execução.
 
-### Limitação atual
+### Dependências de cada robô
 
-Os scripts rodam com o Python do ambiente do Maestro. Robôs que dependem de bibliotecas não instaladas nesse ambiente vão falhar. Essa limitação deixa de existir com o agente em Go, que executa cada robô no ambiente da máquina onde ele está instalado.
+Cada robô roda no ambiente do próprio gerenciador de dependências, detectado pelos arquivos da pasta do script, no worker e no agente com a mesma regra (`robots/ambiente.py` e `agente-go/internal/ambiente`):
+
+| Arquivo na pasta do robô | Ferramenta | Antes de rodar |
+|---|---|---|
+| `uv.lock`, ou `pyproject.toml` sem seção de outra ferramenta | uv | `uv sync` |
+| `poetry.lock`, ou `pyproject.toml` com `[tool.poetry]` | poetry | `poetry install --no-root` |
+| `pdm.lock`, ou `pyproject.toml` com `[tool.pdm]` | pdm | `pdm install` |
+| `Pipfile.lock` ou `Pipfile` | pipenv | `pipenv sync` ou `pipenv install` |
+| `requirements.txt` | pip, num venv | `pip install -r requirements.txt` |
+| nenhum | o Python do Maestro (ou do agente) | — |
+
+O log da execução mostra o que foi detectado e a saída do preparo, em linhas `[ambiente]`. O preparo tem limite próprio de 15 minutos; o tempo máximo do robô conta só a execução dele. Se a ferramenta não estiver instalada, a execução falha sem nova tentativa (`ambiente_invalido`); se o preparo falhar, falha com nova tentativa (`preparo_falhou`). O robô nunca herda o venv de quem o roda. Os detalhes estão em [`docs/agente/protocolo.md`](docs/agente/protocolo.md#ambiente-do-robô).
+
+Para o worker guardar o ambiente de cada robô fora da pasta dele, defina `ROBOS_PASTA_VENVS` (no Docker, já vem definido).
 
 ---
 

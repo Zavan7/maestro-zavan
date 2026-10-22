@@ -77,7 +77,7 @@ Ao receber, o agente:
 
 1. Responde `iniciado` com o mesmo `execucao_id`.
 2. Resolve `robo` dentro da pasta aprovada (veja **Segurança**). Se o caminho sair da pasta ou o script não existir, manda uma linha de `log` com o motivo e um `fim` com `motivo: "script_invalido"`, sem `codigo_saida`.
-3. Roda o robô, enviando o log em lotes, e manda `fim` quando o processo terminar.
+3. Detecta o gerenciador de dependências da pasta do robô, prepara as dependências e roda o robô no ambiente dele (veja **Ambiente do robô**), enviando o log em lotes, e manda `fim` quando o processo terminar.
 
 Um agente pode rodar execuções de robôs diferentes ao mesmo tempo. O Maestro nunca manda duas execuções do mesmo robô juntas.
 
@@ -146,8 +146,81 @@ O Maestro numera as linhas na ordem de chegada, grava o fim do log (até o limit
 | `tempo_esgotado` | passou de `timeout_segundos` e o agente encerrou | o do processo encerrado | `falha` | sim |
 | `parado` | encerrado por causa do `parar` | o do processo encerrado | `cancelada` | não |
 | `script_invalido` | o robô nem chegou a rodar | ausente ou `null` | `falha` | não |
+| `ambiente_invalido` | a ferramenta de dependências do robô não está instalada, ou o ambiente não abriu | ausente ou `null` | `falha` | não |
+| `preparo_falhou` | instalar as dependências falhou ou passou de 15 minutos | o do comando de preparo | `falha` | sim |
 
 Antes do `fim`, mande o último lote de `log`. Um `fim` de execução que o Maestro já encerrou (cancelada porque o agente ficou offline, por exemplo) é ignorado sem erro.
+
+---
+
+## Ambiente do robô
+
+Cada robô roda no ambiente do próprio gerenciador de dependências, detectado pelos arquivos da **pasta do script** (só ela; nunca as pastas de cima, para um robô avulso não pegar o projeto de outra pessoa). O worker do Maestro (`robots/ambiente.py`), o agente em Go (`agente-go/internal/ambiente`) e o agente de referência seguem a mesma regra.
+
+### Detecção
+
+O primeiro que existir decide:
+
+| Ordem | Arquivo na pasta do robô | Ferramenta |
+|---|---|---|
+| 1 | `uv.lock` | uv |
+| 2 | `poetry.lock` | poetry |
+| 3 | `pdm.lock` | pdm |
+| 4 | `Pipfile.lock` ou `Pipfile` | pipenv |
+| 5 | `pyproject.toml` com a seção `[tool.poetry]` | poetry |
+| 6 | `pyproject.toml` com a seção `[tool.pdm]` | pdm |
+| 7 | `pyproject.toml` sem essas seções | uv |
+| 8 | `requirements.txt` | pip, num venv |
+| 9 | nenhum dos anteriores | o Python de quem roda o robô, sem preparo |
+
+Os locks vêm antes do `pyproject.toml` porque dizem com certeza quem gerencia o projeto.
+
+### Preparo e execução
+
+Na pasta do robô, antes de cada execução:
+
+| Ferramenta | Preparo | Execução |
+|---|---|---|
+| uv | `uv sync` | `uv run --no-sync python -u <script>` |
+| poetry | `poetry install --no-root` | `poetry run python -u <script>` |
+| pdm | `pdm install` | `pdm run python -u <script>` |
+| pipenv | `pipenv sync` (com `Pipfile.lock`) ou `pipenv install` | `pipenv run python -u <script>` |
+| pip | `python -m venv <venv>` (se ainda não existe) e `<venv>/bin/python -m pip install -r requirements.txt` | `<venv>/bin/python -u <script>` |
+| nenhum | — | `python -u <script>` |
+
+- Tudo vai para o log da execução, com linhas que começam com `[ambiente]`: o que foi detectado (`[ambiente] poetry (poetry.lock)`), cada comando de preparo (`[ambiente] $ poetry install --no-root`) e a saída dele, e então a saída do robô.
+- O **preparo** tem o próprio limite, de 15 minutos por comando: a primeira instalação de um robô pode demorar bem mais que ele. O `timeout_segundos` do `iniciar` vale só para a execução do robô.
+- O `parar` vale também durante o preparo, e o `fim` sai com `motivo: "parado"`.
+- **Ferramenta ausente** (o robô tem `poetry.lock`, mas a máquina não tem `poetry`): nada roda; uma linha `[ambiente]` diz o que falta e o `fim` sai com `motivo: "ambiente_invalido"`. Tentar de novo não instala a ferramenta, então o Maestro não repete.
+- **Preparo que falha** (sem rede, pacote inexistente, lock desatualizado): `motivo: "preparo_falhou"`, e o Maestro pode tentar de novo.
+
+### Onde fica o ambiente de cada robô
+
+Sem configuração, cada ferramenta usa o próprio padrão (o `.venv` da pasta, no uv e no pip; a pasta de venvs do poetry, do pdm ou do pipenv). Com uma **pasta de venvs** (`AGENTE_PASTA_VENVS` no agente, `ROBOS_PASTA_VENVS` no worker), o ambiente de cada robô fica fora da pasta dele, em `<pasta de venvs>/<nome do robô>`, com o nome tirado do caminho (`coleta/notas` vira `coleta__notas`):
+
+| Ferramenta | Como |
+|---|---|
+| uv | `UV_PROJECT_ENVIRONMENT=<pasta>` |
+| poetry | `POETRY_VIRTUALENVS_PATH=<pasta>` e `POETRY_VIRTUALENVS_IN_PROJECT=false` |
+| pipenv | `WORKON_HOME=<pasta>` |
+| pip | o venv é criado em `<pasta>` |
+| pdm | `PDM_VENV_IN_PROJECT=false`: o pdm não tem variável para a pasta, então o venv vai para a pasta de venvs dele, dentro do `HOME` |
+
+É o que o Docker usa: a pasta dos robôs vem do host, e um `.venv` criado no container não serve no host.
+
+### Ambiente do processo
+
+O robô não herda o ambiente virtual de quem o roda: `VIRTUAL_ENV`, `UV_PROJECT_ENVIRONMENT`, `POETRY_ACTIVE`, `PIPENV_ACTIVE`, `PYTHONHOME` e `PYTHONPATH` são removidos, e a pasta `bin` do venv ativo sai do `PATH`. Sem isso, um `uv sync` ou `poetry install` instalaria as dependências do robô no ambiente do Maestro ou do agente. O `MAESTRO_TOKEN` também é removido, e `PYTHONUNBUFFERED=1` é ligado.
+
+### Preparar à mão
+
+O agente em Go tem um subcomando que faz o mesmo preparo e roda o Python do robô com os argumentos dados, sem conexão com o Maestro (a pasta é relativa a `AGENTE_PASTA_ROBOS`):
+
+```bash
+agente ambiente coleta -- -m playwright install firefox
+```
+
+O `instalar-navegadores` do container do agente usa esse subcomando em cada robô que depende do Playwright, qualquer que seja o gerenciador dele.
 
 ---
 
@@ -174,7 +247,7 @@ Toda mensagem do agente é validada antes de tocar no banco:
 
 O que o agente em Go precisa ter, além do que a referência em Python já faz:
 
-- **Ambiente de cada robô:** cada robô é uma pasta com o próprio `pyproject.toml`; o agente roda `uv run main.py` dentro dela, e as dependências são as daquele robô. A referência usa o Python do próprio ambiente, por simplicidade.
+- **Ambiente de cada robô:** detectar o gerenciador de dependências da pasta do robô, preparar e rodar dentro do ambiente dele (veja **Ambiente do robô**). Feito em `internal/ambiente`.
 - **Encerramento em árvore:** no Linux, grupo de processos próprio (`Setpgid`) e sinal para o grupo; no Windows, Job Object. `exec.CommandContext` sozinho mata só o processo principal.
 - **Fila de reenvio:** se a conexão cair no meio de uma execução, guardar `log` e `fim` e reenviar depois de reconectar. A referência perde essas mensagens. O Maestro ignora `fim` repetido, mas linhas de `log` reenviadas aparecem duplicadas; reenvie só o que não saiu.
 - **Configuração:** `MAESTRO_URL`, `MAESTRO_TOKEN` e a pasta aprovada, lidos do ambiente ou de um arquivo de configuração.

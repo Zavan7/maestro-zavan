@@ -6,16 +6,30 @@
 //	MAESTRO_URL=ws://localhost:8000/ws/agente/
 //	MAESTRO_TOKEN=mae_...
 //	AGENTE_PASTA_ROBOS=/caminho/dos/robos
-//	AGENTE_UV=uv            (opcional; robôs com pyproject.toml)
-//	AGENTE_PYTHON=python3   (opcional; robôs sem pyproject.toml)
+//	AGENTE_UV=uv            (opcional; robôs com uv.lock ou pyproject.toml)
+//	AGENTE_POETRY=poetry    (opcional; robôs com poetry.lock ou [tool.poetry])
+//	AGENTE_PDM=pdm          (opcional; robôs com pdm.lock ou [tool.pdm])
+//	AGENTE_PIPENV=pipenv    (opcional; robôs com Pipfile)
+//	AGENTE_PYTHON=python3   (opcional; robôs com requirements.txt ou sem gerenciador)
 //	AGENTE_PASTA_VENVS=/var/lib/agente/venvs  (opcional; venv de cada robô fora da pasta dele)
+//
+// O gerenciador de dependências de cada robô (uv, poetry, pdm, pipenv ou
+// pip) é detectado pela pasta dele; veja docs/agente/protocolo.md.
+//
+// Subcomando, para preparar o ambiente de um robô e rodar o Python dele
+// à mão (a pasta é relativa a AGENTE_PASTA_ROBOS):
+//
+//	agente ambiente coleta -- -m playwright install firefox
 package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/Zavan7/maestro-zavan/agente-go/internal/conexao"
@@ -24,6 +38,9 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "ambiente" {
+		os.Exit(rodarAmbiente(os.Args[2:]))
+	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	cfg, err := config.Carregar()
@@ -45,8 +62,7 @@ func main() {
 	var cliente *conexao.Cliente
 	gerente := execucoes.Novo(execucoes.Opcoes{
 		PastaRobos: cfg.PastaRobos,
-		UV:         cfg.UV,
-		Python:     cfg.Python,
+		Programas:  cfg.Programas(),
 		PastaVenvs: cfg.PastaVenvs,
 		Enviar:     func(v any) { cliente.Enviar(v) },
 		Logger:     logger,
@@ -61,4 +77,45 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("agente encerrado")
+}
+
+// rodarAmbiente atende "agente ambiente <pasta do robô> [-- args do python]":
+// detecta o gerenciador de dependências da pasta, prepara as
+// dependências e, se houver args, roda o Python do robô com eles. A
+// pasta é relativa a AGENTE_PASTA_ROBOS e não pode sair dela. Devolve o
+// código de saída do processo.
+func rodarAmbiente(argumentos []string) int {
+	if len(argumentos) == 0 || argumentos[0] == "--" {
+		fmt.Fprintln(os.Stderr, "uso: agente ambiente <pasta do robô> [-- argumentos do python]")
+		return 2
+	}
+	pasta, args := argumentos[0], argumentos[1:]
+	if len(args) > 0 && args[0] == "--" {
+		args = args[1:]
+	}
+
+	cfg, err := config.CarregarAmbiente()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "configuração inválida:", err)
+		return 2
+	}
+	pastaDoRobo, err := filepath.Abs(filepath.Join(cfg.PastaRobos, pasta))
+	if err != nil || !strings.HasPrefix(pastaDoRobo+string(filepath.Separator),
+		cfg.PastaRobos+string(filepath.Separator)) {
+		fmt.Fprintf(os.Stderr, "%q está fora de %s\n", pasta, cfg.PastaRobos)
+		return 2
+	}
+
+	gerente := execucoes.Novo(execucoes.Opcoes{
+		PastaRobos: cfg.PastaRobos,
+		Programas:  cfg.Programas(),
+		PastaVenvs: cfg.PastaVenvs,
+	})
+	motivo, codigo := gerente.RodarNoAmbiente(pastaDoRobo, args,
+		func(linha string) { fmt.Println(linha) })
+	if codigo != nil {
+		return *codigo
+	}
+	fmt.Fprintln(os.Stderr, "não rodou:", motivo)
+	return 1
 }

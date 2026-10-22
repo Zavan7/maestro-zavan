@@ -19,13 +19,18 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 - Robôs podem rodar num agente: o disparo manda `iniciar` ao agente, o "parar" manda `parar`, e o agente devolve o log ao vivo e como terminou, pelo WebSocket `ws/agente/`
 - Protocolo do agente documentado em `docs/agente/protocolo.md` e agente de referência em Python (`tools/agente_referencia.py`) para testar sem o agente em Go
 - Status do sistema mostra quantos agentes estão online
-- Agente em Go executa os robôs: `iniciar` resolve o robô dentro da pasta aprovada (barrando `../`, caminho absoluto e link simbólico para fora), roda com `uv run` quando a pasta do robô tem `pyproject.toml` (senão com `python3 -u`), manda o log em lotes de 0,5 s dentro dos limites do protocolo e o `fim` com motivo e código de saída
+- Agente em Go executa os robôs: `iniciar` resolve o robô dentro da pasta aprovada (barrando `../`, caminho absoluto e link simbólico para fora), roda o robô no ambiente do gerenciador de dependências dele, manda o log em lotes de 0,5 s dentro dos limites do protocolo e o `fim` com motivo e código de saída
 - Agente em Go para os robôs: `parar` e tempo esgotado mandam SIGTERM ao grupo de processos e SIGKILL 5 s depois; filhos que sobram são encerrados; ao desligar, o agente encerra os robôs em andamento
 - Agente em Go guarda numa fila o que não conseguiu enviar e reenvia ao reconectar, na mesma ordem e sem repetir o que já saiu
-- O robô rodado pelo agente não herda o `MAESTRO_TOKEN`
+- O robô não herda o `MAESTRO_TOKEN` nem o ambiente virtual de quem o roda (`VIRTUAL_ENV`, `UV_PROJECT_ENVIRONMENT` e a pasta `bin` do venv no `PATH`), no worker e no agente
 - Docker: `docker compose up -d --build` sobe Redis, Maestro (Daphne), worker com agendador e agente em Go; o token do agente fica em `agente.env`, separado do `.env`, e `instalar-navegadores` baixa os navegadores do Playwright de cada robô
 - `AGENTE_PASTA_VENVS` no agente: cada robô ganha um venv fora da própria pasta, para o container não usar nem sobrescrever o `.venv` do host
 - Testes do agente em Go (`go test ./...`): configuração, resolução do robô, executor, execuções e conexão contra um Maestro falso
+- Cada robô roda no ambiente do próprio gerenciador de dependências, detectado pela pasta dele: uv, poetry, pdm, pipenv ou `requirements.txt` com pip, com as dependências sincronizadas antes de cada execução e a saída do preparo no log, em linhas `[ambiente]`; vale para o worker e para o agente em Go, com a mesma regra
+- Motivos de fim `ambiente_invalido` (a ferramenta do robô não está instalada; falha sem nova tentativa) e `preparo_falhou` (a instalação das dependências falhou ou passou de 15 minutos; falha com nova tentativa)
+- `ROBOS_PASTA_VENVS` no worker, como o `AGENTE_PASTA_VENVS` do agente: o ambiente de cada robô fica fora da pasta dele
+- Subcomando `agente ambiente <pasta do robô> -- <args>`, que prepara o ambiente do robô e roda o Python dele; o `instalar-navegadores` passa a usá-lo e funciona com qualquer gerenciador
+- Imagens Docker do worker e do agente com poetry, pdm e pipenv (além do uv), em versões fixas; volume `worker-robos` para os ambientes dos robôs do worker
 
 ### Alterado
 

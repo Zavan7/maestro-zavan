@@ -281,6 +281,15 @@ ROBOS_SCRIPTS_DIR = Path(
 )
 CELERY_TIMEZONE = TIME_ZONE
 
+# Opcional: onde o worker guarda o ambiente de cada robô (um por robô),
+# em vez do .venv dentro da pasta dele. Útil no Docker, onde a pasta dos
+# robôs vem do host e um .venv criado no container não serve no host.
+ROBOS_PASTA_VENVS = (
+    Path(os.environ["ROBOS_PASTA_VENVS"])
+    if os.getenv("ROBOS_PASTA_VENVS", "").strip()
+    else None
+)
+
 
 # Django Channels: WebSocket do log ao vivo
 # O Redis do Channels usa o banco 1, separado da fila do Celery (banco 0).

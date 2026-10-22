@@ -59,23 +59,37 @@ class Motivo(Enum):
     """Por que a execução terminou.
 
     Os valores em texto são os mesmos que o agente em Go envia na
-    mensagem ``fim``. ``SCRIPT_INVALIDO`` nunca sai do executor: é quando
-    o robô nem chegou a rodar (script inexistente ou fora da pasta
-    aprovada), detectado antes de chamá-lo.
+    mensagem ``fim``. Os três últimos nunca saem do executor; são
+    decididos antes ou em volta dele (``robots.ambiente``):
+
+    - ``SCRIPT_INVALIDO``: o script não existe ou está fora da pasta
+      aprovada;
+    - ``AMBIENTE_INVALIDO``: a ferramenta de dependências do robô (uv,
+      poetry, pdm, pipenv) não está instalada na máquina;
+    - ``PREPARO_FALHOU``: a instalação das dependências falhou ou passou
+      do tempo.
 
     English:
         Why the execution ended.
 
         The text values are the same ones the Go agent sends in the
-        ``fim`` message. ``SCRIPT_INVALIDO`` never comes out of the
-        executor: it is when the robot did not even run (missing script or
-        outside the approved folder), detected before calling it.
+        ``fim`` message. The last three never come out of the executor;
+        they are decided before or around it (``robots.ambiente``):
+
+        - ``SCRIPT_INVALIDO``: the script is missing or outside the
+          approved folder;
+        - ``AMBIENTE_INVALIDO``: the robot's dependency tool (uv, poetry,
+          pdm, pipenv) is not installed on the machine;
+        - ``PREPARO_FALHOU``: installing the dependencies failed or ran
+          out of time.
     """
 
     CONCLUIDO = "concluido"
     TEMPO_ESGOTADO = "tempo_esgotado"
     PARADO = "parado"
     SCRIPT_INVALIDO = "script_invalido"
+    AMBIENTE_INVALIDO = "ambiente_invalido"
+    PREPARO_FALHOU = "preparo_falhou"
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +111,7 @@ def executar(
     deve_parar: Callable[[], bool],
     ao_receber_linha: Callable[[str], None],
     a_cada_volta: Callable[[], None] | None = None,
+    env: dict[str, str] | None = None,
     intervalo_verificacao: float = INTERVALO_VERIFICACAO_SEGUNDOS,
     espera_encerramento: float = ESPERA_ENCERRAMENTO_SEGUNDOS,
 ) -> ResultadoExecucao:
@@ -118,6 +133,8 @@ def executar(
         a_cada_volta: função opcional chamada a cada volta do laço (cerca
             de dez vezes por segundo), com ou sem linha nova; serve para
             despachar o que foi acumulado mesmo com o robô calado.
+        env: variáveis de ambiente do processo; ``None`` herda as de
+            quem chama.
         intervalo_verificacao: de quanto em quanto tempo ``deve_parar`` é
             perguntada.
         espera_encerramento: quanto esperar o processo sair depois do
@@ -149,6 +166,8 @@ def executar(
                 (about ten times a second), with or without a new line;
                 it lets accumulated output be flushed even while the robot
                 is silent.
+            env: process environment variables; ``None`` inherits the
+                caller's.
             intervalo_verificacao: how often ``deve_parar`` is asked.
             espera_encerramento: how long to wait for the process to exit
                 after the polite request (``terminate``) before forcing it
@@ -163,6 +182,7 @@ def executar(
     processo = subprocess.Popen(
         comando,
         cwd=cwd,
+        env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

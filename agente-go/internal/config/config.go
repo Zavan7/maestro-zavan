@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Zavan7/maestro-zavan/agente-go/internal/ambiente"
 )
 
 // Config reúne tudo o que o agente precisa para trabalhar.
@@ -18,10 +20,16 @@ type Config struct {
 	Token string
 	// PastaRobos é a pasta aprovada: só robôs dentro dela rodam.
 	PastaRobos string
-	// UV roda os robôs que têm pyproject.toml na pasta (padrão "uv").
+	// UV roda os robôs com uv.lock ou pyproject.toml (padrão "uv").
 	UV string
-	// Python roda os robôs sem pyproject.toml (padrão "python3").
+	// Python roda os robôs sem gerenciador de dependências e cria o venv
+	// dos que só têm requirements.txt (padrão "python3").
 	Python string
+	// Poetry, PDM e Pipenv rodam os robôs que usam cada ferramenta
+	// (padrão: o nome dela, procurado no PATH).
+	Poetry string
+	PDM    string
+	Pipenv string
 	// PastaVenvs, se definida, guarda o ambiente de cada robô fora da
 	// pasta dele (opcional). Usada no Docker, onde o .venv da pasta do
 	// robô foi criado pelo Python do host e não serve no container.
@@ -29,20 +37,16 @@ type Config struct {
 }
 
 // Carregar lê MAESTRO_URL, MAESTRO_TOKEN e AGENTE_PASTA_ROBOS e confere
-// cada um; AGENTE_UV, AGENTE_PYTHON e AGENTE_PASTA_VENVS são opcionais. Devolve todos os problemas de uma vez, para quem configura
-// não precisar corrigir um por um.
+// cada um; AGENTE_UV, AGENTE_POETRY, AGENTE_PDM, AGENTE_PIPENV,
+// AGENTE_PYTHON e AGENTE_PASTA_VENVS são opcionais. Devolve todos os
+// problemas de uma vez, para quem configura não precisar corrigir um
+// por um.
 func Carregar() (Config, error) {
-	cfg := Config{
-		URL:        strings.TrimSpace(os.Getenv("MAESTRO_URL")),
-		Token:      strings.TrimSpace(os.Getenv("MAESTRO_TOKEN")),
-		PastaRobos: strings.TrimSpace(os.Getenv("AGENTE_PASTA_ROBOS")),
-		UV:         padrao(os.Getenv("AGENTE_UV"), "uv"),
-		Python:     padrao(os.Getenv("AGENTE_PYTHON"), "python3"),
-		PastaVenvs: strings.TrimSpace(os.Getenv("AGENTE_PASTA_VENVS")),
-	}
+	cfg, erroAmbiente := CarregarAmbiente()
+	cfg.URL = strings.TrimSpace(os.Getenv("MAESTRO_URL"))
+	cfg.Token = strings.TrimSpace(os.Getenv("MAESTRO_TOKEN"))
 
 	var problemas []error
-
 	if cfg.URL == "" {
 		problemas = append(problemas, errors.New("MAESTRO_URL não definida"))
 	} else if u, err := url.Parse(cfg.URL); err != nil ||
@@ -50,12 +54,28 @@ func Carregar() (Config, error) {
 		problemas = append(problemas,
 			fmt.Errorf("MAESTRO_URL precisa começar com ws:// ou wss://: %q", cfg.URL))
 	}
-
 	if !strings.HasPrefix(cfg.Token, "mae_") {
 		problemas = append(problemas,
 			errors.New("MAESTRO_TOKEN ausente ou inválido (começa com mae_)"))
 	}
+	return cfg, errors.Join(append(problemas, erroAmbiente)...)
+}
 
+// CarregarAmbiente lê só o que é preciso para preparar e rodar robôs
+// (pasta aprovada, programas e pasta dos venvs), sem a conexão. É o que
+// o subcomando "agente ambiente" usa.
+func CarregarAmbiente() (Config, error) {
+	cfg := Config{
+		PastaRobos: strings.TrimSpace(os.Getenv("AGENTE_PASTA_ROBOS")),
+		UV:         padrao(os.Getenv("AGENTE_UV"), "uv"),
+		Python:     padrao(os.Getenv("AGENTE_PYTHON"), "python3"),
+		Poetry:     padrao(os.Getenv("AGENTE_POETRY"), "poetry"),
+		PDM:        padrao(os.Getenv("AGENTE_PDM"), "pdm"),
+		Pipenv:     padrao(os.Getenv("AGENTE_PIPENV"), "pipenv"),
+		PastaVenvs: strings.TrimSpace(os.Getenv("AGENTE_PASTA_VENVS")),
+	}
+
+	var problemas []error
 	if cfg.PastaRobos == "" {
 		problemas = append(problemas, errors.New("AGENTE_PASTA_ROBOS não definida"))
 	} else {
@@ -79,8 +99,12 @@ func Carregar() (Config, error) {
 				fmt.Errorf("AGENTE_PASTA_VENVS não pôde ser criada: %w", err))
 		}
 	}
-
 	return cfg, errors.Join(problemas...)
+}
+
+// Programas devolve os executáveis de cada gerenciador de dependências.
+func (c Config) Programas() ambiente.Programas {
+	return ambiente.Programas{UV: c.UV, Poetry: c.Poetry, PDM: c.PDM, Pipenv: c.Pipenv, Python: c.Python}
 }
 
 // padrao devolve valor sem espaços nas pontas, ou alternativa se vazio.

@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/Zavan7/maestro-zavan/agente-go/internal/ambiente"
 	"github.com/Zavan7/maestro-zavan/agente-go/internal/executor"
 	"github.com/Zavan7/maestro-zavan/agente-go/internal/protocolo"
 	"github.com/Zavan7/maestro-zavan/agente-go/internal/robo"
@@ -23,16 +25,22 @@ import (
 // IntervaloLote é de quanto em quanto tempo as linhas acumuladas saem.
 const IntervaloLote = 500 * time.Millisecond
 
+// TempoMaximoPreparo é o limite de cada comando de preparo (uv sync,
+// poetry install...). O tempo limite do robô conta só a execução dele:
+// a primeira instalação pode demorar bem mais que o robô.
+const TempoMaximoPreparo = 15 * time.Minute
+
 // Opcoes reúne a configuração do gerente.
 type Opcoes struct {
 	// PastaRobos é a pasta aprovada: só scripts dentro dela rodam.
 	PastaRobos string
-	// UV e Python são os programas usados para rodar os robôs.
-	UV     string
-	Python string
+	// Programas são os executáveis de cada gerenciador de dependências.
+	Programas ambiente.Programas
 	// PastaVenvs, se definida, recebe um ambiente por robô, no lugar do
 	// .venv dentro da pasta do robô.
 	PastaVenvs string
+	// TempoPreparo substitui TempoMaximoPreparo se positivo.
+	TempoPreparo time.Duration
 	// Enviar entrega uma mensagem do protocolo à fila de saída.
 	Enviar func(any)
 	Logger *slog.Logger
@@ -62,6 +70,9 @@ func (a *ativa) pedirParada() { a.parada.Do(func() { close(a.parar) }) }
 func Novo(op Opcoes) *Gerente {
 	if op.IntervaloLote <= 0 {
 		op.IntervaloLote = IntervaloLote
+	}
+	if op.TempoPreparo <= 0 {
+		op.TempoPreparo = TempoMaximoPreparo
 	}
 	if op.Logger == nil {
 		op.Logger = slog.Default()
@@ -169,13 +180,6 @@ func (g *Gerente) executar(msg protocolo.Recebida, parar <-chan struct{}) {
 	default:
 	}
 
-	programa, args, pasta := robo.Comando(script, g.op.UV, g.op.Python)
-	ambiente := ambienteDoRobo(os.Environ())
-	if programa == g.op.UV && g.op.PastaVenvs != "" {
-		ambiente = append(ambiente,
-			"UV_PROJECT_ENVIRONMENT="+venvDoRobo(g.op.PastaVenvs, g.op.PastaRobos, pasta))
-	}
-
 	// Despacha o que foi acumulado a cada intervalo, mesmo com o robô
 	// calado; nada sai quando não há linha nova.
 	pararDespacho := make(chan struct{})
@@ -194,29 +198,92 @@ func (g *Gerente) executar(msg protocolo.Recebida, parar <-chan struct{}) {
 		}
 	}()
 
-	resultado, err := executor.Executar(executor.Pedido{
-		Programa:           programa,
-		Args:               args,
-		Pasta:              pasta,
-		Env:                ambiente,
-		Timeout:            time.Duration(msg.TimeoutSegundos) * time.Second,
-		Parar:              parar,
-		AoReceberLinha:     lote.acrescentar,
-		EsperaEncerramento: g.op.EsperaEncerramento,
-	})
+	motivo, codigo := g.rodarNoAmbiente(script, ambiente.Plano.Comando,
+		time.Duration(msg.TimeoutSegundos)*time.Second, parar, lote.acrescentar)
 	close(pararDespacho)
 	<-despachoTerminou
 	// O último lote sai antes do "fim", como o protocolo pede.
 	g.enviarLote(id, lote.tirar())
 
+	g.op.Enviar(protocolo.NovoFim(id, motivo, codigo))
+	g.op.Logger.Info("execução terminada", "execucao_id", id, "motivo", motivo)
+}
+
+// RodarNoAmbiente prepara o ambiente de uma pasta de robô e roda o
+// Python dele com args, sem tempo limite. É o subcomando "agente
+// ambiente", usado para instalar os navegadores do Playwright no ambiente
+// de cada robô: "-m playwright install firefox".
+func (g *Gerente) RodarNoAmbiente(
+	pastaDoRobo string, args []string, linha func(string),
+) (protocolo.Motivo, *int) {
+	// O nome do arquivo não importa: o plano só olha a pasta dele.
+	referencia := filepath.Join(pastaDoRobo, "main.py")
+	montar := func(p ambiente.Plano, _ string) []string {
+		return append(append([]string{}, p.Python...), args...)
+	}
+	return g.rodarNoAmbiente(referencia, montar, 0, nil, linha)
+}
+
+// rodarNoAmbiente detecta o gerenciador de dependências do robô,
+// prepara as dependências e roda o comando que montar devolve dentro do
+// ambiente dele. Tudo vai para o log: o que foi detectado, cada comando
+// de preparo e a saída dele, e então a saída do robô. Devolve o motivo
+// do fim e o código de saída, nil quando nada chegou a rodar.
+func (g *Gerente) rodarNoAmbiente(
+	script string, montar func(ambiente.Plano, string) []string,
+	timeout time.Duration, parar <-chan struct{}, linha func(string),
+) (protocolo.Motivo, *int) {
+	plano := ambiente.Planejar(script, g.op.Programas, g.op.PastaRobos, g.op.PastaVenvs)
+	env := append(ambiente.AmbienteLimpo(os.Environ()), plano.Env...)
+	linha(plano.Descricao())
+	if plano.Programa != "" {
+		if _, err := exec.LookPath(plano.Programa); err != nil {
+			linha(fmt.Sprintf("%s o robô usa %s, mas %q não está instalado nesta máquina",
+				ambiente.Prefixo, plano.Ferramenta, plano.Programa))
+			return protocolo.AmbienteInvalido, nil
+		}
+	}
+
+	rodar := func(comando []string, timeout time.Duration) (executor.Resultado, error) {
+		return executor.Executar(executor.Pedido{
+			Programa:           comando[0],
+			Args:               comando[1:],
+			Pasta:              plano.Pasta,
+			Env:                env,
+			Timeout:            timeout,
+			Parar:              parar,
+			AoReceberLinha:     linha,
+			EsperaEncerramento: g.op.EsperaEncerramento,
+		})
+	}
+
+	for _, passo := range plano.Preparo {
+		linha(ambiente.Prefixo + " $ " + strings.Join(passo, " "))
+		resultado, err := rodar(passo, g.op.TempoPreparo)
+		codigo := resultado.CodigoSaida
+		switch {
+		case err != nil:
+			linha(fmt.Sprintf("%s o ambiente do robô não abriu: %v", ambiente.Prefixo, err))
+			return protocolo.AmbienteInvalido, nil
+		case resultado.Motivo == protocolo.Parado:
+			return protocolo.Parado, &codigo
+		case resultado.Motivo == protocolo.TempoEsgotado:
+			linha(fmt.Sprintf("%s preparo excedeu o limite de %.0fs",
+				ambiente.Prefixo, g.op.TempoPreparo.Seconds()))
+			return protocolo.PreparoFalhou, &codigo
+		case codigo != 0:
+			linha(fmt.Sprintf("%s preparo falhou (código %d)", ambiente.Prefixo, codigo))
+			return protocolo.PreparoFalhou, &codigo
+		}
+	}
+
+	resultado, err := rodar(montar(plano, script), timeout)
 	if err != nil {
-		recusar(fmt.Sprintf("não foi possível iniciar %q: %v", programa, err))
-		return
+		linha(fmt.Sprintf("%s o ambiente do robô não abriu: %v", ambiente.Prefixo, err))
+		return protocolo.AmbienteInvalido, nil
 	}
 	codigo := resultado.CodigoSaida
-	g.op.Enviar(protocolo.NovoFim(id, resultado.Motivo, &codigo))
-	g.op.Logger.Info("execução terminada", "execucao_id", id,
-		"motivo", resultado.Motivo, "codigo_saida", codigo)
+	return resultado.Motivo, &codigo
 }
 
 // enviarLote manda as linhas em mensagens "log" dentro dos limites do
@@ -251,37 +318,6 @@ func Dividir(linhas []string) [][]string {
 		cortadas = cortadas[n:]
 	}
 	return partes
-}
-
-// venvDoRobo dá a cada robô uma pasta de ambiente própria dentro de
-// pastaVenvs, com o nome tirado do caminho do robô na pasta aprovada:
-// "coleta/main.py" fica em "<pastaVenvs>/coleta".
-func venvDoRobo(pastaVenvs, pastaRobos, pastaDoRobo string) string {
-	if real, err := filepath.EvalSymlinks(pastaRobos); err == nil {
-		pastaRobos = real
-	}
-	nome, err := filepath.Rel(pastaRobos, pastaDoRobo)
-	if err != nil || nome == "." {
-		nome = "_raiz"
-	}
-	nome = strings.ReplaceAll(nome, string(filepath.Separator), "__")
-	return filepath.Join(pastaVenvs, nome)
-}
-
-// ambienteDoRobo devolve o ambiente do agente sem o token e com a saída
-// do Python sem buffer. O token é a credencial do agente: um robô não
-// tem por que enxergá-lo.
-func ambienteDoRobo(ambiente []string) []string {
-	resultado := make([]string, 0, len(ambiente)+1)
-	for _, variavel := range ambiente {
-		if strings.HasPrefix(variavel, "MAESTRO_TOKEN=") ||
-			strings.HasPrefix(variavel, "PYTHONUNBUFFERED=") ||
-			strings.HasPrefix(variavel, "UV_PROJECT_ENVIRONMENT=") {
-			continue
-		}
-		resultado = append(resultado, variavel)
-	}
-	return append(resultado, "PYTHONUNBUFFERED=1")
 }
 
 // lote acumula linhas entre um despacho e outro.

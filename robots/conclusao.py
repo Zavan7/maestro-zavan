@@ -48,8 +48,11 @@ def desfecho(
     - concluído com outro código, ou tempo esgotado: ``FALHA``, que pode
       ter nova tentativa;
     - parado pelo usuário: ``CANCELADA``, sem nova tentativa;
-    - script inválido: ``FALHA`` sem nova tentativa, porque repetir não
-      resolve um erro de configuração.
+    - script inválido ou ambiente inválido (a ferramenta de dependências
+      não está instalada): ``FALHA`` sem nova tentativa, porque repetir
+      não resolve um erro de configuração;
+    - preparo que falhou: ``FALHA``, que pode ter nova tentativa, porque
+      costuma ser rede.
 
     Args:
         motivo: por que a execução terminou.
@@ -66,8 +69,11 @@ def desfecho(
         - finished with another code, or timed out: ``FALHA``, which may
           get a new attempt;
         - stopped by the user: ``CANCELADA``, with no new attempt;
-        - invalid script: ``FALHA`` with no new attempt, because
-          repeating does not fix a configuration error.
+        - invalid script or invalid environment (the dependency tool is
+          not installed): ``FALHA`` with no new attempt, because
+          repeating does not fix a configuration error;
+        - failed preparation: ``FALHA``, which may get a new attempt,
+          because it is usually the network.
 
         Args:
             motivo: why the execution ended.
@@ -91,7 +97,7 @@ def desfecho(
                 pode_repetir=True,
                 aviso=f"Execução excedeu o limite de {timeout_segundos}s.",
             )
-        case Motivo.SCRIPT_INVALIDO:
+        case Motivo.SCRIPT_INVALIDO | Motivo.AMBIENTE_INVALIDO:
             return Desfecho(Execucao.Status.FALHA, pode_repetir=False)
         case Motivo.CONCLUIDO if codigo_saida == 0:
             return Desfecho(Execucao.Status.SUCESSO, pode_repetir=False)

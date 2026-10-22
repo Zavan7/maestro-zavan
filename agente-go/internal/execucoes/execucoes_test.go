@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Zavan7/maestro-zavan/agente-go/internal/ambiente"
 	"github.com/Zavan7/maestro-zavan/agente-go/internal/protocolo"
 )
 
@@ -57,8 +58,9 @@ func (c *caixa) esperarFim(t *testing.T, id int64) protocolo.Fim {
 	}
 }
 
-// linhas junta as linhas de todas as mensagens "log" da execução.
-func (c *caixa) linhas(id int64) []string {
+// linhasComAmbiente junta as linhas de todas as mensagens "log" da
+// execução, inclusive as que o agente escreve sobre o ambiente.
+func (c *caixa) linhasComAmbiente(id int64) []string {
 	var todas []string
 	for _, m := range c.todas() {
 		if log, ok := m.(protocolo.Log); ok && log.ExecucaoID == id {
@@ -66,6 +68,17 @@ func (c *caixa) linhas(id int64) []string {
 		}
 	}
 	return todas
+}
+
+// linhas devolve só a saída do robô, sem as linhas "[ambiente]".
+func (c *caixa) linhas(id int64) []string {
+	var saida []string
+	for _, linha := range c.linhasComAmbiente(id) {
+		if !strings.HasPrefix(linha, ambiente.Prefixo) {
+			saida = append(saida, linha)
+		}
+	}
+	return saida
 }
 
 // preparar cria a pasta aprovada com um robô e um Gerente ligado à caixa.
@@ -88,8 +101,7 @@ func preparar(t *testing.T, robos map[string]string) (*Gerente, *caixa) {
 	c := novaCaixa()
 	g := Novo(Opcoes{
 		PastaRobos:         pasta,
-		UV:                 "uv",
-		Python:             python,
+		Programas:          ambiente.Programas{UV: "uv", Poetry: "poetry", PDM: "pdm", Pipenv: "pipenv", Python: python},
 		Enviar:             c.enviar,
 		Logger:             slog.New(slog.NewTextHandler(io.Discard, nil)),
 		IntervaloLote:      50 * time.Millisecond,
@@ -251,23 +263,63 @@ func TestDividirRespeitaOsLimites(t *testing.T) {
 	}
 }
 
-func TestVenvDoRoboFicaForaDaPastaDoRobo(t *testing.T) {
-	robos := t.TempDir()
-	real, _ := filepath.EvalSymlinks(robos)
-	casos := map[string]string{
-		filepath.Join(real, "patrice", "desafio_rpa"): "/venvs/patrice__desafio_rpa",
-		real: "/venvs/_raiz",
+func TestFerramentaAusenteEAmbienteInvalido(t *testing.T) {
+	g, c := preparar(t, map[string]string{
+		"coleta/main.py":     "print('não deveria rodar')\n",
+		"coleta/poetry.lock": "",
+	})
+	g.op.Programas.Poetry = "poetry-que-nao-existe"
+
+	g.Atender(iniciar(30, "coleta/main.py", 30))
+	fim := c.esperarFim(t, 30)
+
+	if fim.Motivo != protocolo.AmbienteInvalido || fim.CodigoSaida != nil {
+		t.Fatalf("fim = %+v", fim)
 	}
-	for pasta, esperado := range casos {
-		if got := venvDoRobo("/venvs", robos, pasta); got != esperado {
-			t.Errorf("venvDoRobo(%q) = %q, esperado %q", pasta, got, esperado)
-		}
+	todas := c.linhasComAmbiente(30)
+	if ultima := todas[len(todas)-1]; !strings.Contains(ultima, "não está instalado nesta máquina") {
+		t.Errorf("última linha = %q", ultima)
+	}
+	if len(c.linhas(30)) != 0 {
+		t.Errorf("o robô não deveria ter rodado: %q", c.linhas(30))
 	}
 }
 
-func TestAmbienteDoRoboDescartaVenvHerdado(t *testing.T) {
-	ambiente := ambienteDoRobo([]string{"PATH=/bin", "UV_PROJECT_ENVIRONMENT=/outro", "MAESTRO_TOKEN=mae_x"})
-	if !slices.Equal(ambiente, []string{"PATH=/bin", "PYTHONUNBUFFERED=1"}) {
-		t.Errorf("ambiente = %q", ambiente)
+func TestRequirementsRodaNoProprioVenv(t *testing.T) {
+	g, c := preparar(t, map[string]string{
+		"coleta/main.py":          "import sys\nprint(sys.prefix)\n",
+		"coleta/requirements.txt": "# sem dependências\n",
+	})
+	venvs := t.TempDir()
+	g.op.PastaVenvs = venvs
+
+	g.Atender(iniciar(31, "coleta/main.py", 60))
+	fim := c.esperarFim(t, 31)
+
+	if fim.Motivo != protocolo.Concluido || fim.CodigoSaida == nil || *fim.CodigoSaida != 0 {
+		t.Fatalf("fim = %+v, linhas = %q", fim, c.linhasComAmbiente(31))
+	}
+	saida := c.linhas(31)
+	if ultima := saida[len(saida)-1]; ultima != filepath.Join(venvs, "coleta") {
+		t.Errorf("rodou com %q, esperado o venv do robô", ultima)
+	}
+}
+
+func TestPreparoQueFalhaEPreparoFalhou(t *testing.T) {
+	g, c := preparar(t, map[string]string{
+		"coleta/main.py":          "print('não deveria rodar')\n",
+		"coleta/requirements.txt": "=== isto não é um requisito\n",
+	})
+	g.op.PastaVenvs = t.TempDir()
+
+	g.Atender(iniciar(32, "coleta/main.py", 60))
+	fim := c.esperarFim(t, 32)
+
+	if fim.Motivo != protocolo.PreparoFalhou {
+		t.Fatalf("fim = %+v", fim)
+	}
+	todas := c.linhasComAmbiente(32)
+	if ultima := todas[len(todas)-1]; !strings.HasPrefix(ultima, ambiente.Prefixo+" preparo falhou") {
+		t.Errorf("última linha = %q", ultima)
 	}
 }

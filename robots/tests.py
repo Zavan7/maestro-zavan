@@ -4,11 +4,12 @@ English:
     Tests for the robots app: model, views and trigger service.
 """
 
+import shutil
 import sys
 import tempfile
 import time
 from pathlib import Path
-from unittest import mock
+from unittest import mock, skipUnless
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
@@ -17,6 +18,16 @@ from django.test import Client, TestCase, override_settings
 
 from config.models import ConfiguracaoSistema
 from executions.models import Execucao
+from robots.ambiente import (
+    Ferramenta,
+    Programas,
+    ambiente_limpo,
+    detectar,
+    nome_do_venv,
+    planejar,
+    rodar_robo,
+)
+from robots.conclusao import desfecho
 from robots.executor import Motivo, executar
 from robots.models import Robo
 from robots.services import DisparoRecusado, disparar_execucao
@@ -610,7 +621,9 @@ class ExecutarRoboTaskTest(TestCase):
         execucao = self._rodar()
 
         self.assertEqual(execucao.status, Execucao.Status.SUCESSO)
-        self.assertEqual(execucao.log, "etapa 1\netapa 2")
+        primeira, *saida = execucao.log.splitlines()
+        self.assertTrue(primeira.startswith("[ambiente] sem gerenciador"))
+        self.assertEqual(saida, ["etapa 1", "etapa 2"])
         self.assertIsNotNone(execucao.iniciado_em)
         self.assertIsNotNone(execucao.finalizado_em)
 
@@ -633,15 +646,16 @@ class ExecutarRoboTaskTest(TestCase):
             for chamada in linhas.call_args_list
             for linha in chamada.args[1]
         ]
+        self.assertTrue(enviadas[0]["texto"].startswith("[ambiente]"))
         self.assertEqual(
-            enviadas,
+            enviadas[1:],
             [
-                {"numero": 1, "texto": "etapa 1"},
-                {"numero": 2, "texto": "etapa 2"},
+                {"numero": 2, "texto": "etapa 1"},
+                {"numero": 3, "texto": "etapa 2"},
             ],
         )
         fim.assert_called_once_with(execucao.pk, Execucao.Status.SUCESSO)
-        self.assertEqual(execucao.total_linhas, 2)
+        self.assertEqual(execucao.total_linhas, 3)
 
     def test_tempo_do_robo_esgotado_vira_falha(self):
         """Passar do tempo do próprio robô vira falha, com o motivo no log.
@@ -671,8 +685,7 @@ class ExecutarRoboTaskTest(TestCase):
         self._script("print('ok')")
 
         with mock.patch(
-            "robots.tasks.executar",
-            return_value=mock.Mock(motivo=Motivo.CONCLUIDO, codigo_saida=0),
+            "robots.tasks.rodar_robo", return_value=(Motivo.CONCLUIDO, 0)
         ) as executar_falso:
             self._rodar()
 
@@ -720,7 +733,7 @@ class ExecutarRoboTaskTest(TestCase):
             robo=self.robo, status=Execucao.Status.CANCELADA
         )
 
-        with mock.patch("robots.tasks.executar") as executar_falso:
+        with mock.patch("robots.tasks.rodar_robo") as executar_falso:
             executar_robo(execucao.pk)
 
         executar_falso.assert_not_called()
@@ -913,3 +926,270 @@ class PararExecucaoTest(TestCase):
         self.assertEqual(response.status_code, 403)
         execucao.refresh_from_db()
         self.assertEqual(execucao.status, Execucao.Status.PENDENTE)
+
+
+class AmbienteDoRoboTest(TestCase):
+    """Testes da detecção do gerenciador de dependências e do preparo.
+
+    English:
+        Tests for dependency manager detection and preparation.
+    """
+
+    def setUp(self):
+        """Cria uma pasta aprovada temporária com uma pasta de robô.
+
+        English:
+            Creates a temporary approved folder with a robot folder.
+        """
+        temporaria = tempfile.TemporaryDirectory()
+        self.addCleanup(temporaria.cleanup)
+        self.raiz = Path(temporaria.name)
+        self.pasta = self.raiz / "coleta"
+        self.pasta.mkdir()
+        self.script = self.pasta / "main.py"
+        self.script.write_text("import sys\nprint(sys.prefix)\n")
+
+    def _arquivos(self, **conteudos):
+        """Grava arquivos na pasta do robô (``Pipfile_lock`` vira ``.lock``).
+
+        English:
+            Writes files in the robot's folder (``Pipfile_lock`` becomes
+            ``.lock``).
+        """
+        for nome, conteudo in conteudos.items():
+            nome = nome.replace("_lock", ".lock").replace("_txt", ".txt")
+            nome = nome.replace("_toml", ".toml")
+            (self.pasta / nome).write_text(conteudo)
+
+    def _rodar(self, **opcoes):
+        """Roda o robô pelo ``rodar_robo`` e devolve o resultado e o log.
+
+        English:
+            Runs the robot through ``rodar_robo`` and returns the result
+            and the log.
+        """
+        linhas = []
+        opcoes.setdefault("programas", Programas())
+        resultado = rodar_robo(
+            self.script,
+            pasta_robos=self.raiz,
+            timeout_segundos=30,
+            deve_parar=lambda: False,
+            ao_receber_linha=linhas.append,
+            **opcoes,
+        )
+        return resultado, linhas
+
+    def test_detecta_cada_ferramenta_pelos_arquivos(self):
+        """Cada arquivo identifica a ferramenta, com os locks na frente.
+
+        English:
+            Each file identifies the tool, with the locks first.
+        """
+        poetry = '[tool.poetry]\nname = "x"\n'
+        casos = [
+            ({"uv_lock": "", "pyproject_toml": poetry}, Ferramenta.UV),
+            ({"poetry_lock": ""}, Ferramenta.POETRY),
+            ({"pdm_lock": ""}, Ferramenta.PDM),
+            ({"Pipfile": ""}, Ferramenta.PIPENV),
+            ({"pyproject_toml": poetry}, Ferramenta.POETRY),
+            ({"pyproject_toml": "[tool.pdm]\n"}, Ferramenta.PDM),
+            ({"pyproject_toml": "[project]\nname = 'x'\n"}, Ferramenta.UV),
+            ({"pyproject_toml": "isto não é toml ["}, Ferramenta.UV),
+            ({"requirements_txt": "six\n"}, Ferramenta.PIP),
+            ({}, Ferramenta.SISTEMA),
+        ]
+        for arquivos, esperada in casos:
+            with self.subTest(arquivos=list(arquivos)):
+                for arquivo in self.pasta.iterdir():
+                    if arquivo != self.script:
+                        arquivo.unlink()
+                self._arquivos(**arquivos)
+                self.assertEqual(detectar(self.pasta)[0], esperada)
+
+    def test_nao_sobe_para_as_pastas_de_cima(self):
+        """Um pyproject.toml acima da pasta do robô não conta.
+
+        English:
+            A pyproject.toml above the robot's folder does not count.
+        """
+        (self.raiz / "pyproject.toml").write_text("[project]\n")
+
+        self.assertEqual(detectar(self.pasta)[0], Ferramenta.SISTEMA)
+
+    def test_nome_do_venv_vem_do_caminho_do_robo(self):
+        """O nome do venv junta as pastas com ``__``; a raiz vira ``_raiz``.
+
+        English:
+            The venv name joins the folders with ``__``; the root becomes
+            ``_raiz``.
+        """
+        aninhada = self.pasta / "notas"
+        aninhada.mkdir()
+
+        self.assertEqual(nome_do_venv(self.raiz, aninhada), "coleta__notas")
+        self.assertEqual(nome_do_venv(self.raiz, self.raiz), "_raiz")
+
+    def test_ambiente_limpo_nao_vaza_o_venv_nem_o_token(self):
+        """Sai o venv ativo (variáveis e PATH) e o token; entra o -u.
+
+        English:
+            The active venv (variables and PATH) and the token go out;
+            unbuffered output comes in.
+        """
+        limpo = ambiente_limpo(
+            {
+                "PATH": "/opt/venv/bin:/usr/bin",
+                "VIRTUAL_ENV": "/opt/venv",
+                "UV_PROJECT_ENVIRONMENT": "/opt/venv",
+                "MAESTRO_TOKEN": "mae_x",
+                "HOME": "/home/robo",
+            }
+        )
+
+        self.assertEqual(
+            limpo,
+            {
+                "PATH": "/usr/bin",
+                "HOME": "/home/robo",
+                "PYTHONUNBUFFERED": "1",
+            },
+        )
+
+    def test_plano_guarda_cada_ambiente_fora_da_pasta(self):
+        """Com pasta de venvs, cada ferramenta recebe a sua variável.
+
+        English:
+            With a venvs folder, each tool gets its own variable.
+        """
+        venvs = self.raiz / "venvs"
+        casos = [
+            ({"uv_lock": ""}, "UV_PROJECT_ENVIRONMENT"),
+            ({"poetry_lock": ""}, "POETRY_VIRTUALENVS_PATH"),
+            ({"Pipfile_lock": "{}"}, "WORKON_HOME"),
+        ]
+        for arquivos, variavel in casos:
+            with self.subTest(variavel=variavel):
+                for arquivo in self.pasta.iterdir():
+                    if arquivo != self.script:
+                        arquivo.unlink()
+                self._arquivos(**arquivos)
+                plano = planejar(self.script, Programas(), self.raiz, venvs)
+                self.assertEqual(plano.env[variavel], str(venvs / "coleta"))
+
+    def test_pipenv_sincroniza_com_lock_e_instala_sem(self):
+        """Com Pipfile.lock, ``pipenv sync``; só com Pipfile, ``install``.
+
+        English:
+            With Pipfile.lock, ``pipenv sync``; with only a Pipfile,
+            ``install``.
+        """
+        self._arquivos(Pipfile="")
+        self.assertEqual(
+            planejar(self.script, Programas(), self.raiz).preparo,
+            [["pipenv", "install"]],
+        )
+        self._arquivos(Pipfile_lock="{}")
+        self.assertEqual(
+            planejar(self.script, Programas(), self.raiz).preparo,
+            [["pipenv", "sync"]],
+        )
+
+    def test_ferramenta_ausente_e_ambiente_invalido(self):
+        """Sem a ferramenta instalada, nada roda e o motivo vai para o log.
+
+        English:
+            Without the tool installed, nothing runs and the reason goes to
+            the log.
+        """
+        self._arquivos(poetry_lock="")
+
+        with mock.patch("robots.ambiente.executar") as executar_falso:
+            (motivo, codigo), linhas = self._rodar(
+                programas=Programas(poetry="poetry-que-nao-existe")
+            )
+
+        executar_falso.assert_not_called()
+        self.assertEqual((motivo, codigo), (Motivo.AMBIENTE_INVALIDO, None))
+        self.assertIn("não está instalado nesta máquina", linhas[-1])
+
+    def test_requirements_roda_no_proprio_venv(self):
+        """Com requirements.txt, cria o venv, instala e roda dentro dele.
+
+        English:
+            With requirements.txt, it creates the venv, installs and runs
+            inside it.
+        """
+        self._arquivos(requirements_txt="# sem dependências\n")
+        venvs = self.raiz / "venvs"
+
+        (motivo, codigo), linhas = self._rodar(pasta_venvs=venvs)
+
+        self.assertEqual((motivo, codigo), (Motivo.CONCLUIDO, 0))
+        self.assertEqual(linhas[-1], str(venvs / "coleta"))
+
+    def test_preparo_que_falha_e_preparo_falhou(self):
+        """Um requirements.txt inválido faz o preparo falhar, sem rodar.
+
+        English:
+            An invalid requirements.txt makes preparation fail, without
+            running.
+        """
+        self._arquivos(requirements_txt="=== isto não é um requisito\n")
+
+        (motivo, _), linhas = self._rodar(pasta_venvs=self.raiz / "venvs")
+
+        self.assertEqual(motivo, Motivo.PREPARO_FALHOU)
+        self.assertTrue(linhas[-1].startswith("[ambiente] preparo falhou"))
+
+    def test_parada_no_preparo_e_parado(self):
+        """Uma parada pedida durante o preparo encerra como parado.
+
+        English:
+            A stop requested during preparation ends as stopped.
+        """
+        self._arquivos(uv_lock="")
+        parado = mock.Mock(motivo=Motivo.PARADO, codigo_saida=-15)
+
+        with (
+            mock.patch("robots.ambiente.shutil.which", return_value="/uv"),
+            mock.patch(
+                "robots.ambiente.executar", return_value=parado
+            ) as executar_falso,
+        ):
+            (motivo, _), _ = self._rodar()
+
+        self.assertEqual(motivo, Motivo.PARADO)
+        executar_falso.assert_called_once()
+
+    @skipUnless(shutil.which("uv"), "uv não está instalado")
+    def test_projeto_uv_roda_no_ambiente_dele(self):
+        """Um projeto uv sem dependências sincroniza e roda no venv dele.
+
+        English:
+            A uv project with no dependencies syncs and runs in its venv.
+        """
+        self._arquivos(
+            pyproject_toml='[project]\nname = "coleta"\nversion = "0.1.0"\n'
+        )
+        venvs = self.raiz / "venvs"
+
+        (motivo, codigo), linhas = self._rodar(pasta_venvs=venvs)
+
+        self.assertEqual((motivo, codigo), (Motivo.CONCLUIDO, 0))
+        self.assertEqual(linhas[-1], str(venvs / "coleta"))
+
+    def test_desfecho_dos_motivos_de_ambiente(self):
+        """Ambiente inválido não repete; preparo que falhou repete.
+
+        English:
+            An invalid environment does not repeat; a failed preparation
+            does.
+        """
+        invalido = desfecho(Motivo.AMBIENTE_INVALIDO, None, 300)
+        preparo = desfecho(Motivo.PREPARO_FALHOU, 1, 300)
+
+        self.assertEqual(invalido.status, Execucao.Status.FALHA)
+        self.assertFalse(invalido.pode_repetir)
+        self.assertEqual(preparo.status, Execucao.Status.FALHA)
+        self.assertTrue(preparo.pode_repetir)
