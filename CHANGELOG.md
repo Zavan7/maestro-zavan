@@ -25,7 +25,7 @@ Correções da varredura de segurança. As marcadas com **(quebra)** mudam o com
 
 ### Documentação
 
-- Tutorial no README para rodar o Maestro localmente: pré-requisitos, instalação, `.env`, banco, os dois processos, conferência pelo status do sistema, dia a dia, problemas comuns e diferenças para produção; substitui a antiga seção "Como rodar localmente"
+- Tutorial no README para rodar o Maestro só com Docker, com a instalação no Windows 11 (WSL 2 e Docker Desktop), no Linux e no macOS, conferência pelo status do sistema, comandos do dia a dia e problemas comuns; substitui a antiga seção "Como rodar localmente", e "Como rodar com Docker" vira "Serviços do Docker", só com a referência
 
 ### Removido
 

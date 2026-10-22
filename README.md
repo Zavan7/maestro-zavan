@@ -8,18 +8,18 @@ Primeiro produto da **ZV Labs**.
 
 **Versão atual:** 1.1.0. Veja o [CHANGELOG](CHANGELOG.md).
 
-**Começando agora?** Siga o [tutorial](#tutorial-rodar-o-maestro-localmente): em uns 10 minutos o Maestro está rodando na sua máquina.
+**Começando agora?** Siga o [tutorial](#tutorial-rodar-o-maestro-com-docker): só com o Docker, no Windows 11, no Linux ou no macOS, em uns 15 minutos o Maestro está rodando na sua máquina.
 
 ---
 
 ## Sumário
 
-- [Tutorial: rodar o Maestro localmente](#tutorial-rodar-o-maestro-localmente)
+- [Tutorial: rodar o Maestro com Docker](#tutorial-rodar-o-maestro-com-docker)
 - [Funcionalidades](#funcionalidades)
 - [Arquitetura](#arquitetura)
 - [Stack](#stack)
 - [Estrutura do projeto](#estrutura-do-projeto)
-- [Como rodar com Docker](#como-rodar-com-docker)
+- [Serviços do Docker](#serviços-do-docker)
 - [Rotas](#rotas)
 - [Perfis e permissões](#perfis-e-permissões)
 - [Execução de robôs](#execução-de-robôs)
@@ -35,147 +35,175 @@ Primeiro produto da **ZV Labs**.
 
 ---
 
-## Tutorial: rodar o Maestro localmente
+## Tutorial: rodar o Maestro com Docker
 
-Passo a passo para ter o Maestro rodando na sua máquina, do clone até a tela de login com tudo verde. Leva uns 10 minutos. Os comandos são para Linux e macOS; no Windows, use o [WSL](https://learn.microsoft.com/windows/wsl/install).
+Este passo a passo leva o Maestro do zero até a tela de login, na sua máquina, usando só o Docker. Você não instala Python, Redis nem nenhuma dependência: tudo roda dentro dos containers. Leva uns 15 minutos, quase todos esperando downloads.
 
-> Prefere não instalar nada além do Docker? Veja [Como rodar com Docker](#como-rodar-com-docker).
+O caminho é o mesmo nos três sistemas. Só o **passo 1**, a instalação do Docker, muda: siga a parte do seu.
 
-### Passo 1: instalar o que falta
+### Passo 1: instalar o Docker e o Git
 
-Você precisa de três coisas:
+<details open>
+<summary><strong>Windows 11</strong></summary>
 
-| O quê | Para quê | Como conferir |
-|---|---|---|
-| [Git](https://git-scm.com/downloads) | baixar o código | `git --version` |
-| [uv](https://docs.astral.sh/uv/getting-started/installation/) | instalar o Python 3.14 e as dependências | `uv --version` |
-| Redis | fila de tarefas e log ao vivo | `redis-cli ping` responde `PONG` |
+No Windows, o Maestro roda dentro do **WSL 2** (um Linux integrado ao Windows), que é o jeito recomendado pelo próprio Docker: os arquivos ficam num disco Linux, mais rápido e sem problemas de permissão ou de fim de linha.
 
-Não é preciso instalar o Python à parte: o uv baixa a versão certa (3.14, definida em `.python-version`) sozinho.
+1. **Instale o WSL com o Ubuntu.** Clique com o botão direito no menu Iniciar, abra o **Terminal (Admin)** e rode:
 
-Para instalar o uv:
+   ```powershell
+   wsl --install
+   ```
+
+   Reinicie o computador quando pedir. Na volta, a janela do **Ubuntu** abre sozinha e pede um nome de usuário e uma senha para o Linux (não precisam ser os do Windows; guarde a senha).
+
+2. **Instale o Docker Desktop.** Baixe em [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) e instale deixando marcada a opção **Use WSL 2 instead of Hyper-V**. Abra o Docker Desktop e aceite os termos.
+
+3. **Ligue o Docker no Ubuntu.** No Docker Desktop, vá em **Settings → Resources → WSL integration**, ative **Ubuntu** e clique em **Apply & restart**.
+
+4. **Abra o Ubuntu** pelo menu Iniciar. **Todos os comandos dos próximos passos são digitados nessa janela**, e não no PowerShell. O Git já vem no Ubuntu.
+
+> Clone o projeto dentro do Ubuntu (na sua pasta, `~`), e não em `C:\` (`/mnt/c/...`). Fora do disco do Linux, o Maestro fica lento e o banco SQLite pode dar erro de trava.
+
+</details>
+
+<details open>
+<summary><strong>Linux</strong></summary>
+
+1. **Instale o Docker Engine** com o script oficial (Ubuntu, Debian, Fedora e outros):
+
+   ```bash
+   curl -fsSL https://get.docker.com | sudo sh
+   ```
+
+2. **Use o Docker sem `sudo`:** adicione seu usuário ao grupo `docker` e **saia e entre de novo na sessão** (ou reinicie) para valer:
+
+   ```bash
+   sudo usermod -aG docker $USER
+   ```
+
+3. **Instale o Git**, se ainda não tiver: `sudo apt install git` (Ubuntu e Debian) ou `sudo dnf install git` (Fedora).
+
+</details>
+
+<details open>
+<summary><strong>macOS</strong></summary>
+
+1. **Descubra o seu processador:** no menu da Apple (canto superior esquerdo), abra **Sobre este Mac**. "Apple M1/M2/M3/M4" é **Apple Silicon**; "Intel" é Intel.
+2. **Instale o Docker Desktop:** baixe em [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) a versão do seu processador, arraste para **Aplicativos**, abra e aceite os termos. Deixe-o aberto: o ícone da baleia na barra de menus indica que está rodando. (Com Homebrew: `brew install --cask docker`.)
+3. **Instale o Git:** abra o **Terminal** e rode `git --version`. Se ele ainda não estiver instalado, o macOS oferece instalar as ferramentas de linha de comando; aceite.
+
+</details>
+
+**Confira a instalação** (no Windows, na janela do Ubuntu):
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
+docker --version
+docker compose version
+docker run --rm hello-world
 ```
 
-Para instalar e ligar o Redis:
+O último comando deve imprimir `Hello from Docker!`. Se algum falhar, veja [Se algo der errado](#se-algo-der-errado).
 
-```bash
-# Ubuntu / Debian / WSL
-sudo apt install redis-server
-sudo systemctl enable --now redis-server
-
-# macOS (Homebrew)
-brew install redis
-brew services start redis
-```
-
-Confira com `redis-cli ping`: a resposta deve ser `PONG`.
-
-### Passo 2: baixar o código e as dependências
+### Passo 2: baixar o Maestro
 
 ```bash
 git clone https://github.com/Zavan7/maestro-zavan.git
 cd maestro-zavan
-uv sync
 ```
 
-O `uv sync` cria o ambiente virtual em `.venv` e instala tudo o que está no `uv.lock`. Daqui em diante, todo comando começa com `uv run`, que usa esse ambiente sem precisar ativá-lo.
+Os próximos comandos são todos rodados dentro dessa pasta.
 
 ### Passo 3: criar o `.env`
 
+O `.env` guarda a configuração do Maestro. Crie-o a partir do exemplo e registre nele o seu usuário do sistema, para que os arquivos que os containers criarem (como o banco) continuem sendo seus:
+
 ```bash
 cp .env.example .env
+echo "UID=$(id -u)" >> .env
+echo "GID=$(id -g)" >> .env
 ```
 
-Para desenvolvimento, o `.env` copiado já funciona como está:
+Para desenvolvimento, não é preciso mudar mais nada: o exemplo já vem com `DEBUG=True`, e nesse modo o Maestro usa uma chave de desenvolvimento no lugar da `SECRET_KEY`.
 
-| Variável | Valor no exemplo | Observação |
-|---|---|---|
-| `DEBUG` | `True` | modo de desenvolvimento |
-| `SECRET_KEY` | vazio | com `DEBUG=True`, uma chave fixa de desenvolvimento é usada |
-| `ALLOWED_HOSTS` | `localhost,127.0.0.1` | endereços aceitos |
-| `CELERY_BROKER_URL` | `redis://localhost:6379/0` | o Redis do passo 1 |
-
-As outras variáveis do arquivo são opcionais e vêm comentadas, com a explicação ao lado. Com `DEBUG=False`, a `SECRET_KEY` passa a ser obrigatória; para gerar uma:
+### Passo 4: subir o Maestro
 
 ```bash
-uv run python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+docker compose up -d --build web worker
 ```
 
-### Passo 4: preparar o banco e criar o seu usuário
+Na primeira vez, o Docker baixa e monta as imagens; leva alguns minutos. Nas próximas, sobe em segundos. O comando liga três containers:
+
+| Container | O que é |
+|---|---|
+| `redis` | a fila de tarefas e o canal do log ao vivo (sobe junto, sem precisar pedir) |
+| `web` | o site do Maestro; ao subir, ele mesmo prepara o banco (`migrate`) |
+| `worker` | quem executa os robôs e dispara os agendamentos |
+
+Confira se estão de pé:
 
 ```bash
-uv run manage.py migrate
-uv run manage.py createsuperuser
+docker compose ps
 ```
 
-O `migrate` cria o banco SQLite (`db.sqlite3`) e os três grupos de acesso com as permissões certas. O `createsuperuser` pergunta usuário, e-mail (pode deixar vazio) e senha.
+Os três devem aparecer com o estado `Up` (o `redis`, com `healthy`).
 
-### Passo 5: ligar o Maestro
-
-São dois processos. Abra **dois terminais** na pasta do projeto.
-
-**Terminal 1**, o site:
+### Passo 5: criar o seu usuário
 
 ```bash
-uv run manage.py runserver
+docker compose exec web python manage.py createsuperuser
 ```
 
-Espere a linha `Starting ASGI/Daphne ... at http://127.0.0.1:8000/`.
+Ele pergunta o nome de usuário, o e-mail (pode deixar vazio) e a senha, duas vezes. A senha não aparece enquanto você digita.
 
-**Terminal 2**, o worker, que executa os robôs e os agendamentos:
+### Passo 6: abrir e conferir
 
-```bash
-uv run celery -A maestro worker -B --loglevel=info
-```
-
-Espere a linha `celery@... ready.`.
-
-### Passo 6: conferir
-
-1. Abra **http://localhost:8000/login/** e entre com o usuário do passo 4.
+1. No navegador, abra **http://localhost:8000/login/** e entre com o usuário do passo 5.
 2. Vá em **configurações** e olhe o **status do sistema**. Deve aparecer:
    - **fila (Redis)**: `respondendo`;
-   - **worker**: `1 ativo` (é o terminal 2);
-   - **agendador**: `último sinal há Ns` (é o `-B` do terminal 2). Logo depois de ligar, pode levar até um minuto para o primeiro sinal; use **↻ verificar de novo**;
+   - **worker**: `1 ativo`;
+   - **agendador**: `último sinal há Ns`. Logo depois de subir, pode levar até um minuto para o primeiro sinal; clique em **↻ verificar de novo**;
    - **agentes**: `nenhum cadastrado`, o que é normal: agentes são opcionais.
 
 Com os três primeiros assim, o Maestro está pronto.
 
 ### No dia a dia
 
-| Para | Faça |
+Todos os comandos são rodados na pasta do projeto.
+
+| Para | Comando |
 |---|---|
-| Desligar | `Ctrl+C` nos dois terminais |
-| Ligar de novo | só o passo 5 |
-| Atualizar o código | `git pull`, `uv sync` e `uv run manage.py migrate` |
-| Aplicar mudanças no site | nada: o `runserver` recarrega sozinho |
-| Aplicar mudanças em tarefas ou models | reinicie o worker (`Ctrl+C` e o comando de novo), porque ele não recarrega sozinho |
-| Rodar os testes | `uv run manage.py test` (não precisa do Redis nem do worker) |
+| Desligar | `docker compose stop` |
+| Ligar de novo | `docker compose up -d web worker` |
+| Ver o que está rodando | `docker compose ps` |
+| Acompanhar os logs | `docker compose logs -f web worker` (sai com `Ctrl+C`) |
+| Aplicar mudanças no código do site | nada: o `web` recarrega sozinho |
+| Aplicar mudanças em tarefas ou models | `docker compose restart worker` |
+| Atualizar o Maestro | `git pull` e depois `docker compose up -d --build web worker` |
+| Abrir um terminal dentro do Maestro | `docker compose exec web bash` |
+
+Desligar não apaga nada: o banco (`db.sqlite3`) fica na pasta do projeto, e o resto em volumes do Docker. Para **apagar tudo e começar do zero**, rode `docker compose down -v` e apague o `db.sqlite3`; depois volte ao passo 4.
 
 ### Se algo der errado
 
 | Sintoma | O que fazer |
 |---|---|
-| `redis-cli ping` não responde `PONG` | O Redis não está ligado: `sudo systemctl start redis-server` (Linux) ou `brew services start redis` (macOS) |
-| `Error 111 connecting to localhost:6379` no worker | Mesmo caso: o Redis está desligado |
-| `Defina SECRET_KEY no .env` | Falta o `.env` (passo 3) ou ele está com `DEBUG=False` e sem `SECRET_KEY` |
-| `That port is already in use` | Já há algo na porta 8000 (outro `runserver` ou o Docker do Maestro). Pare-o ou use `uv run manage.py runserver 8001` |
-| `no such table` ao abrir o site | Faltou o `uv run manage.py migrate` |
-| "nenhum worker respondeu" no status | O terminal 2 não está rodando |
-| "nenhum sinal recente" no agendador | O worker foi iniciado sem o `-B`, ou ainda não passou um minuto |
-| Execuções presas em **pendente** | O worker está parado (veja a linha acima) |
+| `docker: command not found` (Windows) | Ative o Ubuntu em **Settings → Resources → WSL integration** no Docker Desktop e abra uma nova janela do Ubuntu |
+| `Cannot connect to the Docker daemon` | O Docker não está ligado. Windows e macOS: abra o Docker Desktop e espere a baleia parar de animar. Linux: `sudo systemctl start docker` |
+| `permission denied ... docker.sock` (Linux) | Falta adicionar seu usuário ao grupo `docker` (item 2 do Linux, no passo 1), ou você ainda não saiu e entrou de novo na sessão |
+| `docker compose` não existe, mas `docker-compose` sim | Seu Docker é antigo: atualize o Docker Desktop ou reinstale pelo script do passo 1 |
+| `toomanyrequests` durante o `--build` | O Docker Hub limitou os downloads. Espere alguns minutos ou entre com uma conta grátis: `docker login` |
+| `port is already allocated` | Outro programa usa a porta 8000. Feche-o (pode ser um Maestro rodando fora do Docker) e suba de novo |
+| `unable to open database file` ou `readonly database` no log do `web` | Faltou o `UID` e o `GID` do passo 3. Adicione-os ao `.env` e rode `docker compose up -d web worker` |
+| `Defina SECRET_KEY no .env` | Falta o `.env` (passo 3), ou ele está com `DEBUG=False` e sem `SECRET_KEY` |
+| O site não abre em `localhost:8000` | Veja `docker compose ps` e `docker compose logs web`; o `web` pode ainda estar preparando o banco |
+| "nenhum worker respondeu" no status | Veja `docker compose logs worker` e suba de novo com `docker compose up -d worker` |
 | "Tentativas demais com senha errada" no login | Foram 5 senhas erradas seguidas; espere 15 minutos |
+| Esqueceu a senha | `docker compose exec web python manage.py changepassword <usuário>` |
+| Maestro lento ou erro de trava no banco (Windows) | O projeto está em `C:\` (`/mnt/c/...`). Clone de novo dentro do Ubuntu, na pasta `~` |
 
 ### Em produção
 
-O passo 5 é o jeito de desenvolvimento. Em produção:
-
-- o site roda no próprio Daphne: `uv run daphne maestro.asgi:application`;
-- o beat roda como processo separado e único: `uv run celery -A maestro beat --loglevel=info`, e o worker sem o `-B`;
-- o `.env` leva `DEBUG=False`, uma `SECRET_KEY` própria e as variáveis de HTTPS (veja o `.env.example` e [Segurança](#segurança)).
+Este `docker-compose.yml` é o ambiente de **desenvolvimento**: o código é montado direto da sua pasta e o site roda no servidor de desenvolvimento. Para produção, o `.env` leva `DEBUG=False`, uma `SECRET_KEY` própria e as variáveis de HTTPS; veja o `.env.example` e [Segurança](#segurança).
 
 ---
 
@@ -318,13 +346,9 @@ maestro-zavan/
 
 ---
 
-## Como rodar com Docker
+## Serviços do Docker
 
-Um comando sobe tudo: Redis, Maestro (Daphne), worker do Celery com o agendador e o agente em Go.
-
-```bash
-docker compose up -d --build
-```
+O `docker-compose.yml` define quatro serviços. O [tutorial](#tutorial-rodar-o-maestro-com-docker) sobe os três primeiros; o agente é opcional e só sobe depois de ter um token.
 
 | Serviço | O que roda | Observação |
 |---|---|---|
@@ -333,7 +357,7 @@ docker compose up -d --build
 | `worker` | `celery -A maestro worker -B` | reinicie com `docker compose restart worker` depois de mudar tarefas |
 | `agente` | agente em Go | precisa do token (abaixo) |
 
-O código é montado em `/app`, e o `db.sqlite3` é o mesmo do host. Web e worker rodam com o seu usuário (UID 1000), então os arquivos criados continuam seus. Antes de subir, pare o `runserver` e o worker que estiverem rodando fora do Docker: a porta 8000 é a mesma.
+O código é montado em `/app`, e o `db.sqlite3` é o mesmo do host. Web e worker rodam com o seu usuário (o `UID` e o `GID` do `.env`, ou 1000 sem eles), então os arquivos criados continuam seus.
 
 ### Agente no Docker
 
@@ -349,13 +373,7 @@ Dentro do compose, o agente fala com o Maestro por `ws://web:8000`, sem TLS, e p
 
 Para preparar o ambiente de um robô à mão e rodar o Python dele: `docker compose exec agente agente ambiente coleta -- -c "import playwright"` (a pasta é relativa a `/robos`).
 
-Comandos úteis:
-
-```bash
-docker compose logs -f agente        # log de um serviço
-docker compose exec web python manage.py createsuperuser
-docker compose down                  # para tudo (volumes ficam)
-```
+Para acompanhar o agente: `docker compose logs -f agente`.
 
 ---
 
