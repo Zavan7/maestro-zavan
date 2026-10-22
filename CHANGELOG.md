@@ -23,6 +23,11 @@ Correções da varredura de segurança. As marcadas com **(quebra)** mudam o com
 - **(quebra)** O nome do ambiente de cada robô ganha um sufixo do hash do caminho (`coleta-d6c252e7`), para `coleta/notas` e `coleta__notas` não dividirem o mesmo venv; os ambientes são recriados na primeira execução
 - Docker: a porta 8000 do `web` só abre em `127.0.0.1`
 
+### Documentação
+
+- Tutorial no README, do zero ao primeiro robô: subir com Docker, escrever e cadastrar o robô, rodar com log ao vivo, agendar, dar acesso à equipe, instalar o agente em outra máquina e resolver os problemas mais comuns
+- README atualizado com o agente em Go, o Docker e o django-axes na stack e na estrutura do projeto
+
 ### Adicionado
 
 - Executor próprio (`robots/executor.py`), sem Django nem Celery: acompanha o processo, lê a saída linha a linha e confere tempo e pedido de parada a cada segundo
