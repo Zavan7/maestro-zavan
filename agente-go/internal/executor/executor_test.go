@@ -201,3 +201,23 @@ func continuaVivo(pid int) bool {
 	}
 	return true
 }
+
+func TestRodaComOutroUsuario(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("trocar de usuário exige root")
+	}
+	var linhas []string
+	resultado, err := Executar(Pedido{
+		Programa:       "id",
+		Args:           []string{"-u"},
+		Pasta:          os.TempDir(),
+		Usuario:        &Usuario{UID: 65534, GID: 65534},
+		AoReceberLinha: func(l string) { linhas = append(linhas, l) },
+	})
+	if err != nil || resultado.CodigoSaida != 0 {
+		t.Fatalf("resultado = %+v, err = %v", resultado, err)
+	}
+	if len(linhas) != 1 || linhas[0] != "65534" {
+		t.Errorf("rodou como %q, esperado 65534", linhas)
+	}
+}

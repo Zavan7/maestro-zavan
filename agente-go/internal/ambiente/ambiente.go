@@ -9,6 +9,8 @@ package ambiente
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,13 +44,48 @@ var marcadores = []struct {
 	{"Pipfile", Pipenv},
 }
 
-// variaveisRemovidas não podem vazar do agente para o robô: um venv
-// ativo faria o uv, o poetry ou o pipenv instalarem as dependências do
-// robô no lugar errado, e o token é a credencial do agente.
-var variaveisRemovidas = []string{
-	"VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT", "POETRY_ACTIVE",
-	"PIPENV_ACTIVE", "PYTHONHOME", "PYTHONPATH", "MAESTRO_TOKEN",
-	"PYTHONUNBUFFERED",
+// O robô recebe só estas variáveis do agente, e não o ambiente inteiro:
+// o agente tem o MAESTRO_TOKEN e a própria configuração. Uma lista do que
+// pode passar não deixa vazar por esquecimento uma variável nova.
+// Configuração do próprio robô (usuário e senha de um sistema, por
+// exemplo) vai em variáveis com o prefixo ROBO_. É a mesma lista do
+// worker (robots/ambiente.py).
+var variaveisPermitidas = map[string]bool{
+	"PATH": true, "HOME": true, "USER": true, "LOGNAME": true, "SHELL": true, "TERM": true,
+	"LANG": true, "LANGUAGE": true, "TZ": true, "TMPDIR": true, "TEMP": true, "TMP": true,
+	"DISPLAY": true, "WAYLAND_DISPLAY": true, "XDG_RUNTIME_DIR": true,
+	"HTTP_PROXY": true, "HTTPS_PROXY": true, "NO_PROXY": true, "ALL_PROXY": true,
+	"http_proxy": true, "https_proxy": true, "no_proxy": true, "all_proxy": true,
+	"SSL_CERT_FILE": true, "SSL_CERT_DIR": true, "REQUESTS_CA_BUNDLE": true,
+	"PLAYWRIGHT_BROWSERS_PATH": true,
+	// Windows
+	"SYSTEMROOT": true, "SYSTEMDRIVE": true, "WINDIR": true, "COMSPEC": true, "PATHEXT": true,
+	"APPDATA": true, "LOCALAPPDATA": true, "USERPROFILE": true, "PROGRAMDATA": true,
+}
+
+var prefixosPermitidos = []string{"LC_", "ROBO_", "UV_", "PIP_", "POETRY_", "PDM_", "PIPENV_"}
+
+// Mesmo com o prefixo permitido, estas descrevem o ambiente do agente: um
+// uv sync com o UV_PROJECT_ENVIRONMENT dele instalaria as dependências do
+// robô no lugar errado.
+var variaveisDoAmbienteAtual = map[string]bool{
+	"UV_PROJECT_ENVIRONMENT": true, "POETRY_ACTIVE": true, "PIPENV_ACTIVE": true,
+}
+
+// VariavelPermitida diz se uma variável do agente pode passar para o robô.
+func VariavelPermitida(nome string) bool {
+	if variaveisDoAmbienteAtual[nome] {
+		return false
+	}
+	if variaveisPermitidas[nome] {
+		return true
+	}
+	for _, prefixo := range prefixosPermitidos {
+		if strings.HasPrefix(nome, prefixo) {
+			return true
+		}
+	}
+	return false
 }
 
 // Programas diz qual executável usar para cada ferramenta.
@@ -108,9 +145,12 @@ func Detectar(pasta string) (Ferramenta, string) {
 	return Sistema, ""
 }
 
-// NomeDoVenv dá a cada robô um nome de ambiente a partir do caminho dele
-// na pasta aprovada: "coleta/notas" vira "coleta__notas" e a própria
-// pasta aprovada vira "_raiz". É o mesmo nome do worker.
+// NomeDoVenv dá a cada robô um nome de ambiente único a partir do
+// caminho dele na pasta aprovada: "coleta/notas" vira
+// "coleta__notas-<8 hex>", com os 8 primeiros caracteres do SHA-256 do
+// caminho relativo (com "/"). Sem o sufixo, "coleta/notas" e uma pasta
+// chamada "coleta__notas" dividiriam o mesmo ambiente. A própria pasta
+// aprovada vira "_raiz". É o mesmo nome do worker.
 func NomeDoVenv(pastaRobos, pastaDoRobo string) string {
 	if real, err := filepath.EvalSymlinks(pastaRobos); err == nil {
 		pastaRobos = real
@@ -119,12 +159,15 @@ func NomeDoVenv(pastaRobos, pastaDoRobo string) string {
 	if err != nil || nome == "." {
 		return "_raiz"
 	}
-	return strings.ReplaceAll(nome, string(filepath.Separator), "__")
+	resumo := sha256.Sum256([]byte(filepath.ToSlash(nome)))
+	return strings.ReplaceAll(nome, string(filepath.Separator), "__") +
+		"-" + hex.EncodeToString(resumo[:])[:8]
 }
 
-// AmbienteLimpo copia o ambiente do agente sem o que não deve vazar para
-// o robô: as variáveis de variaveisRemovidas e a pasta bin do venv ativo
-// no PATH. Liga a saída do Python sem buffer.
+// AmbienteLimpo monta o ambiente do robô com só o que VariavelPermitida
+// aceita (o MAESTRO_TOKEN e a configuração do agente não chegam ao robô),
+// tira do PATH a pasta bin do venv ativo e liga a saída do Python sem
+// buffer.
 func AmbienteLimpo(base []string) []string {
 	venvAtivo := ""
 	for _, v := range base {
@@ -135,7 +178,7 @@ func AmbienteLimpo(base []string) []string {
 	resultado := make([]string, 0, len(base)+1)
 	for _, v := range base {
 		nome, valor, _ := strings.Cut(v, "=")
-		if removida(nome) {
+		if !VariavelPermitida(nome) {
 			continue
 		}
 		if nome == "PATH" && venvAtivo != "" {
@@ -231,15 +274,6 @@ func PythonDoVenv(venv string) string {
 func arquivoExiste(caminho string) bool {
 	info, err := os.Stat(caminho)
 	return err == nil && info.Mode().IsRegular()
-}
-
-func removida(nome string) bool {
-	for _, r := range variaveisRemovidas {
-		if nome == r {
-			return true
-		}
-	}
-	return false
 }
 
 // temSecao diz se o pyproject.toml tem a tabela secao ou uma subtabela

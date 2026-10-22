@@ -4,12 +4,16 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/Zavan7/maestro-zavan/agente-go/internal/ambiente"
+	"github.com/Zavan7/maestro-zavan/agente-go/internal/executor"
 )
 
 // Config reúne tudo o que o agente precisa para trabalhar.
@@ -30,6 +34,9 @@ type Config struct {
 	Poetry string
 	PDM    string
 	Pipenv string
+	// UsuarioRobos, se definido, é o usuário do sistema com que os robôs
+	// rodam, diferente do agente (opcional; exige agente como root).
+	UsuarioRobos *executor.Usuario
 	// PastaVenvs, se definida, guarda o ambiente de cada robô fora da
 	// pasta dele (opcional). Usada no Docker, onde o .venv da pasta do
 	// robô foi criado pelo Python do host e não serve no container.
@@ -53,6 +60,14 @@ func Carregar() (Config, error) {
 		(u.Scheme != "ws" && u.Scheme != "wss") {
 		problemas = append(problemas,
 			fmt.Errorf("MAESTRO_URL precisa começar com ws:// ou wss://: %q", cfg.URL))
+	} else if u.Scheme == "ws" && !local(u.Hostname()) &&
+		!semTLSPermitido(os.Getenv("AGENTE_PERMITIR_WS_SEM_TLS")) {
+		// Sem TLS, o token viaja em texto e qualquer um no caminho o
+		// copia. ws:// só vale na própria máquina, ou com permissão
+		// explícita numa rede interna (como a do Docker).
+		problemas = append(problemas,
+			fmt.Errorf("MAESTRO_URL com ws:// fora da máquina local expõe o token: use wss:// "+
+				"(ou AGENTE_PERMITIR_WS_SEM_TLS=1 numa rede interna): %q", cfg.URL))
 	}
 	if !strings.HasPrefix(cfg.Token, "mae_") {
 		problemas = append(problemas,
@@ -90,6 +105,19 @@ func CarregarAmbiente() (Config, error) {
 		}
 	}
 
+	if texto := strings.TrimSpace(os.Getenv("AGENTE_USUARIO_ROBOS")); texto != "" {
+		usuario, err := lerUsuario(texto)
+		switch {
+		case err != nil:
+			problemas = append(problemas, fmt.Errorf("AGENTE_USUARIO_ROBOS: %w", err))
+		case os.Geteuid() != 0:
+			problemas = append(problemas,
+				errors.New("AGENTE_USUARIO_ROBOS exige o agente rodando como root"))
+		default:
+			cfg.UsuarioRobos = usuario
+		}
+	}
+
 	if cfg.PastaVenvs != "" {
 		if !filepath.IsAbs(cfg.PastaVenvs) {
 			problemas = append(problemas,
@@ -105,6 +133,44 @@ func CarregarAmbiente() (Config, error) {
 // Programas devolve os executáveis de cada gerenciador de dependências.
 func (c Config) Programas() ambiente.Programas {
 	return ambiente.Programas{UV: c.UV, Poetry: c.Poetry, PDM: c.PDM, Pipenv: c.Pipenv, Python: c.Python}
+}
+
+// local diz se o host é a própria máquina.
+func local(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// semTLSPermitido lê AGENTE_PERMITIR_WS_SEM_TLS como booleano.
+func semTLSPermitido(valor string) bool {
+	permitido, _ := strconv.ParseBool(strings.TrimSpace(valor))
+	return permitido
+}
+
+// lerUsuario lê "uid:gid" ou o nome de um usuário do sistema (o grupo é
+// o principal dele).
+func lerUsuario(texto string) (*executor.Usuario, error) {
+	if uid, gid, ok := strings.Cut(texto, ":"); ok {
+		u, err1 := strconv.ParseUint(uid, 10, 32)
+		g, err2 := strconv.ParseUint(gid, 10, 32)
+		if err1 != nil || err2 != nil {
+			return nil, fmt.Errorf("use uid:gid ou o nome do usuário: %q", texto)
+		}
+		return &executor.Usuario{UID: uint32(u), GID: uint32(g)}, nil
+	}
+	registro, err := user.Lookup(texto)
+	if err != nil {
+		return nil, err
+	}
+	u, err1 := strconv.ParseUint(registro.Uid, 10, 32)
+	g, err2 := strconv.ParseUint(registro.Gid, 10, 32)
+	if err1 != nil || err2 != nil {
+		return nil, fmt.Errorf("usuário %q sem uid numérico", texto)
+	}
+	return &executor.Usuario{UID: uint32(u), GID: uint32(g)}, nil
 }
 
 // padrao devolve valor sem espaços nas pontas, ou alternativa se vazio.

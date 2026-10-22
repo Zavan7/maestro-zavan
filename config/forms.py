@@ -9,6 +9,7 @@ from typing import Any
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import Group, User
+from django.db.models import QuerySet
 
 from config.models import ConfiguracaoSistema
 
@@ -115,12 +116,20 @@ class NovoUsuarioForm(UserCreationForm):
             "email": "e-mail",
         }
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(
+        self, *args: Any, grupos: QuerySet[Group] | None = None, **kwargs: Any
+    ) -> None:
         """Monta o formulário com os rótulos de senha em minúsculas.
 
         Os campos de senha são declarados pelo ``UserCreationForm``, e não
         pela ``Meta``; por isso o ``labels`` acima não os alcança e os
         rótulos são trocados aqui, depois do ``super()``.
+
+        Args:
+            *args: argumentos do ``UserCreationForm``.
+            grupos: grupos que quem está criando pode conceder
+                (``grupos_que_pode_conceder``); ``None`` oferece todos.
+            **kwargs: argumentos do ``UserCreationForm``.
 
         English:
             Builds the form with lowercase password labels.
@@ -128,7 +137,17 @@ class NovoUsuarioForm(UserCreationForm):
             The password fields are declared by ``UserCreationForm``, not by
             ``Meta``; that is why ``labels`` above does not reach them and
             the labels are changed here, after ``super()``.
+
+            Args:
+                *args: ``UserCreationForm`` arguments.
+                grupos: groups the creator may grant
+                    (``grupos_que_pode_conceder``); ``None`` offers all.
+                **kwargs: ``UserCreationForm`` arguments.
         """
         super().__init__(*args, **kwargs)
+        if grupos is not None:
+            campo = self.fields["grupo"]
+            assert isinstance(campo, forms.ModelChoiceField)
+            campo.queryset = grupos
         self.fields["password1"].label = "senha"
         self.fields["password2"].label = "confirmação da senha"

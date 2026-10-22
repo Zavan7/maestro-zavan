@@ -251,7 +251,7 @@ docker compose up -d --build
 | Serviço | O que roda | Observação |
 |---|---|---|
 | `redis` | Redis 7.4 | sem porta no host; dados no volume `redis-dados` |
-| `web` | `migrate` + `runserver` (Daphne) | `http://localhost:8000` |
+| `web` | `migrate` + `runserver` (Daphne) | `http://localhost:8000`, só na própria máquina |
 | `worker` | `celery -A maestro worker -B` | reinicie com `docker compose restart worker` depois de mudar tarefas |
 | `agente` | agente em Go | precisa do token (abaixo) |
 
@@ -266,6 +266,8 @@ O código é montado em `/app`, e o `db.sqlite3` é o mesmo do host. Web e worke
 5. Baixe os navegadores do Playwright dos robôs (uma vez por versão do Playwright): `docker compose exec agente instalar-navegadores`. Ele acha os robôs que dependem do Playwright, qualquer que seja o gerenciador, e instala no ambiente de cada um.
 
 As imagens do worker e do agente já trazem uv, poetry, pdm e pipenv (versões fixas no topo de cada Dockerfile), então robôs de qualquer uma dessas ferramentas rodam sem instalar nada. No container do agente, o ambiente de cada robô fica no volume `agente-dados` (`AGENTE_PASTA_VENVS`); no do worker, no volume `worker-robos` (`ROBOS_PASTA_VENVS`). O `.venv` da pasta do robô no host não é tocado. Não há tela no container: robôs com Playwright precisam rodar com `headless=True`.
+
+Dentro do compose, o agente fala com o Maestro por `ws://web:8000`, sem TLS, e por isso o serviço define `AGENTE_PERMITIR_WS_SEM_TLS=1`. Um agente em outra máquina deve usar `wss://`.
 
 Para preparar o ambiente de um robô à mão e rodar o Python dele: `docker compose exec agente agente ambiente coleta -- -c "import playwright"` (a pasta é relativa a `/robos`).
 
@@ -293,8 +295,8 @@ docker compose down                  # para tudo (volumes ficam)
 | `/robots/<id>/excluir/` | `robots.delete_robo` | Exclusão com confirmação |
 | `/robots/<id>/iniciar/` | `robots.executar_robo` (POST) | Dispara uma execução |
 | `/robots/<id>/parar/` | `robots.executar_robo` (POST) | Cancela a execução pendente ou pede a parada da que está rodando |
-| `/execucoes/` | Autenticado | Histórico de execuções |
-| `/execucoes/<id>/` | Autenticado | Detalhe e log de uma execução |
+| `/execucoes/` | `executions.view_execucao` | Histórico de execuções |
+| `/execucoes/<id>/` | `executions.view_execucao` | Detalhe e log de uma execução |
 | `/agendamentos/` | Autenticado | Lista de agendamentos |
 | `/agendamentos/novo/` | `scheduler.add_agendamento` | Cadastro de agendamento |
 | `/agendamentos/<id>/editar/` | `scheduler.change_agendamento` | Edição de agendamento |
@@ -307,7 +309,7 @@ docker compose down                  # para tudo (volumes ficam)
 | `/configuracoes/agentes/novo/` | `config.gerenciar_agentes` (POST) | Cria o agente e mostra o token uma vez |
 | `/configuracoes/agentes/<id>/token/` | `config.gerenciar_agentes` (POST) | Gera um token novo e derruba a conexão do antigo |
 | `/configuracoes/agentes/<id>/alternar/` | `config.gerenciar_agentes` (POST) | Desativa ou reativa o agente |
-| `ws/execucoes/<id>/` | Autenticado (WebSocket, sessão e origem) | Log ao vivo de uma execução |
+| `ws/execucoes/<id>/` | `executions.view_execucao` (WebSocket, sessão e origem) | Log ao vivo de uma execução |
 | `ws/agente/` | Token de agente (WebSocket) | Conexão do agente |
 | `/configuracoes/usuarios/` | `config.gerenciar_usuarios` | Usuários e acesso |
 | `/configuracoes/usuarios/novo/` | `config.gerenciar_usuarios` | Criação de usuário |
@@ -330,6 +332,7 @@ Permissões próprias do projeto, além das que o Django cria para cada model:
 | Permissão | Libera |
 |---|---|
 | `robots.executar_robo` | Iniciar e parar robôs |
+| `executions.view_execucao` | Ver o histórico de execuções e os logs (nas telas e no log ao vivo) |
 | `config.gerenciar_usuarios` | Usuários e acesso |
 | `config.ver_status_sistema` | Status do sistema |
 | `config.gerenciar_retencao` | Retenção do histórico |
@@ -338,7 +341,7 @@ Permissões próprias do projeto, além das que o Django cria para cada model:
 
 Os grupos são definidos em `config/migrations/0002_grupos_de_acesso.py` e criados pelo `migrate`. As permissões são verificadas nas views: um usuário autenticado sem permissão recebe **403**, e não um redirecionamento para o login. Os botões correspondentes também são ocultados na interface, mas a proteção real é a da view.
 
-Na gestão de usuários, ninguém altera o próprio acesso, e superusuários só podem ser alterados por outro superusuário. Usuários criados pela tela são sempre comuns (nunca superusuário nem equipe). Usuários são desativados, nunca excluídos, e cada alteração de acesso, inclusive a criação, fica registrada com autor, alvo e data.
+Na gestão de usuários, ninguém altera o próprio acesso, e superusuários só podem ser alterados por outro superusuário. Só é possível conceder um grupo cujas permissões você já tem: o Administrador do sistema concede Operador e Administrador do sistema, mas não Administrador RPA (que edita robôs). Os grupos que você não pode conceder nem aparecem nas opções. Usuários criados pela tela são sempre comuns (nunca superusuário nem equipe). Usuários são desativados, nunca excluídos, e cada alteração de acesso, inclusive a criação, fica registrada com autor, alvo e data.
 
 Superusuários ignoram as verificações de permissão. Para testar os perfis, use um usuário comum associado a um dos grupos.
 
@@ -429,7 +432,7 @@ Cada robô roda no ambiente do próprio gerenciador de dependências, detectado 
 | `requirements.txt` | pip, num venv | `pip install -r requirements.txt` |
 | nenhum | o Python do Maestro (ou do agente) | — |
 
-O log da execução mostra o que foi detectado e a saída do preparo, em linhas `[ambiente]`. O preparo tem limite próprio de 15 minutos; o tempo máximo do robô conta só a execução dele. Se a ferramenta não estiver instalada, a execução falha sem nova tentativa (`ambiente_invalido`); se o preparo falhar, falha com nova tentativa (`preparo_falhou`). O robô nunca herda o venv de quem o roda. Os detalhes estão em [`docs/agente/protocolo.md`](docs/agente/protocolo.md#ambiente-do-robô).
+O log da execução mostra o que foi detectado e a saída do preparo, em linhas `[ambiente]`. O preparo tem limite próprio de 15 minutos; o tempo máximo do robô conta só a execução dele. Se a ferramenta não estiver instalada, a execução falha sem nova tentativa (`ambiente_invalido`); se o preparo falhar, falha com nova tentativa (`preparo_falhou`). O robô nunca herda o venv de quem o roda, nem o ambiente do Maestro: só passam variáveis básicas do sistema (PATH, HOME, idioma, fuso, proxy, certificados, as das ferramentas de dependências) e as que começam com `ROBO_`. Para entregar uma credencial a um robô, use esse prefixo (`ROBO_SENHA_SAP=...`). Os detalhes estão em [`docs/agente/protocolo.md`](docs/agente/protocolo.md#ambiente-do-robô).
 
 Para o worker guardar o ambiente de cada robô fora da pasta dele, defina `ROBOS_PASTA_VENVS` (no Docker, já vem definido).
 
@@ -477,6 +480,7 @@ Um agente é a máquina onde robôs rodam fora do worker do Maestro, por exemplo
 - **Disparo**: o mesmo `disparar_execucao` do botão e do agendador. Com agente, recusa se ele estiver offline e, depois do commit, manda `iniciar` ao agente em vez da task ao Celery.
 - **Execução**: o agente confirma com `iniciado` (o Maestro reivindica a execução como o worker faz), manda o log em lotes e termina com `fim`, informando só o motivo e o código de saída. O status final e a nova tentativa saem de `robots/conclusao.py`, as mesmas regras do worker.
 - **Parar**: com o agente online, marca o pedido e manda `parar`; com ele offline, a execução é cancelada na hora, para o robô não ficar travado.
+- **Revogação**: cada mensagem do agente confere se ele continua ativo e com o mesmo token; se não, a conexão cai com 4401.
 - **Validação**: toda mensagem do agente é validada; um agente só mexe nas execuções dos robôs dele, e mensagem inválida volta como `erro`, sem derrubar a conexão.
 
 Para testar sem o agente em Go, rode o agente de referência em Python:
@@ -558,32 +562,35 @@ uv run manage.py test
 | `RoboModelTest` | criação, status padrão, exibição do status, regra `PROTECT` no responsável |
 | `RobotViewsTest` | acesso sem login, listagem, edição, exclusão com e sem execuções, robô em manutenção, 403 sem `executar_robo` |
 | `DisparoTest` | regras do disparo e envio da tarefa só depois do commit |
-| `ExecutorTest` | linhas e código de saída, tempo esgotado, parada e encerramento à força de quem ignora o SIGTERM, com processos reais |
+| `ExecutorTest` | linhas e código de saída, tempo esgotado, parada e encerramento à força de quem ignora o SIGTERM, robô com outro usuário (como root), com processos reais |
+| `UsuarioDosRobosTest` | leitura de `ROBOS_USUARIO` (`uid:gid` ou nome) e texto inválido |
+| `ProtegerProcessoTest` | sem a proteção o filho lê o `/proc` do pai, com ela não (rode como usuário comum: o root lê tudo) |
 | `LogLimitadoTest` | o log guarda o fim, dentro do limite |
 | `LogAoVivoTest` | lotes a cada 0,5 s com relógio falso, banco gravado antes do envio, envio do que sobrou no fim |
 | `ExecutarRoboTaskTest` | sucesso, tempo do robô e padrão, parada, limite do log, execução não pendente, novas tentativas e quando não repetir, com scripts reais |
 | `PararExecucaoTest` | cancelamento de execução pendente, pedido de parada da rodando, "parando" na lista, sem execução e 403 |
 | `ExecucaoModelTest` | criação, status padrão, regras `PROTECT` e `SET_NULL` |
 | `LogAoVivoViewTest` | WebSocket só para execução em andamento, numeração quando o começo do log foi cortado |
-| `ExecucaoConsumerTest` | recusa sem login (4401) e execução inexistente (4404), log do banco ao conectar, repasse de linhas e fim, fim imediato de execução finalizada |
+| `ExecucaoConsumerTest` | recusa sem login (4401), sem `view_execucao` (4403) e execução inexistente (4404), log do banco ao conectar, repasse de linhas e fim, fim imediato de execução finalizada |
 | `PublicacaoTest` | publicação no grupo da execução e falha do canal sem interromper |
-| `ExecutionViewsTest` | acesso sem login, listagem, detalhe com log, 404 para execução inexistente |
+| `ExecutionViewsTest` | acesso sem login, 403 sem `view_execucao`, listagem, detalhe com log, 404 para execução inexistente |
 | `AgendamentoModelTest` | validação dos dias, segundos zerados, próxima ocorrência e seus casos de borda |
 | `VerificarAgendamentosTest` | disparo no minuto certo, trava contra disparo duplo, pausados, dias desmarcados e robô em manutenção |
 | `ScheduleViewsTest` | acesso, permissões, criação, pausa e exclusão mantendo o histórico |
 | `ConfiguracaoSistemaTest` | registro único da configuração |
 | `AgenteModelTest` | só o hash do token é guardado, estado online pelo último sinal |
-| `ProtocoloTest` | autenticação, reivindicação, linhas numeradas, mensagens inválidas, fim com as regras do worker, nova tentativa no agente |
-| `AgenteConsumerTest` | recusa sem token, sinal ao conectar, repasse de comandos, uma conexão por agente (4409), erro de protocolo, parar para execução cancelada, fluxo completo |
+| `ProtocoloTest` | autenticação, credencial revogada, reivindicação, linhas numeradas, mensagens inválidas, fim com as regras do worker, nova tentativa no agente |
+| `AgenteConsumerTest` | recusa sem token, sinal ao conectar, repasse de comandos, uma conexão por agente (4409), agente revogado derrubado na mensagem seguinte (4401), erro de protocolo, parar para execução cancelada, fluxo completo |
 | `DisparoComAgenteTest` | agente offline recusa o disparo, iniciar vai ao agente e não ao worker, parar com agente online e offline |
 | `AgentViewsTest` | lista, 403 e 302, token mostrado uma vez e guardado como hash, nome repetido, novo token derruba a conexão, desativar e reativar, GET sem efeito, só agentes ativos no formulário do robô |
 | `ConfigHomeTest` | acesso à aba, menu e visibilidade de cada seção por permissão |
-| `ServicosDeAcessoTest` | troca de grupo, desativação, travas contra alteração do próprio acesso e de superusuários, registro |
-| `ConfigUsersViewsTest` | tela de usuários, permissões, recusas como mensagem e ações só por POST |
+| `ServicosDeAcessoTest` | troca de grupo, desativação, travas contra alteração do próprio acesso e de superusuários, grupo com permissões que o autor não tem, registro |
+| `ConfigUsersViewsTest` | tela de usuários, permissões, só grupos que o autor pode conceder, grupo inválido, recusas como mensagem e ações só por POST |
 | `StatusDoSistemaTest` | Redis respondendo e fora do ar, worker, pulso do agendador recente, ausente e velho |
 | `RetencaoTest` | limpeza só das finalizadas antigas, nunca das em andamento, tarefa do beat, edição pela tela, valor inválido, 403 e GET |
 | `LimitesPadraoTest` | edição dos limites, valor inválido, 403 e 302 |
-| `CriarUsuarioTest` | criação com e sem grupo, senha em hash, nunca superusuário, registro, senhas diferentes, usuário repetido, 302 e 403 |
+| `CriarUsuarioTest` | criação com e sem grupo, senha em hash, nunca superusuário, registro, senhas diferentes, usuário repetido, grupo com mais poder, 302 e 403 |
+| `BloqueioDeLoginTest` | bloqueio depois de 5 senhas erradas, abaixo do limite, bloqueio por usuário |
 | `LogoutTest` | logout encerra a sessão e volta para a página inicial |
 
 Os testes não precisam do Redis nem do worker: o `TestCase` do Django não dispara callbacks de `transaction.on_commit`, então nenhuma task é enviada durante os testes. Os testes do agendamento fixam o relógio com `mock.patch`, para não depender da hora em que rodam. Os do status do sistema usam um Redis falso em memória, e as telas da aba trocam as verificações reais por um status fixo.
@@ -596,12 +603,19 @@ Os testes não precisam do Redis nem do worker: o `TestCase` do Django não disp
 - CSRF em todos os formulários
 - Ações que alteram dados (logout, excluir, iniciar, parar, pausar, alterar acesso) aceitas apenas via POST
 - Validadores de senha padrão do Django ativos
+- Login bloqueado por 15 minutos depois de 5 senhas erradas para o mesmo usuário e IP (django-axes)
+- HTTPS em produção (`USAR_HTTPS`, ligado por padrão com `DEBUG=False`): cookies `Secure`, redirecionamento para https e HSTS; atrás de proxy, `ATRAS_DE_PROXY_HTTPS` e `CSRF_TRUSTED_ORIGINS`
 - Permissões verificadas no backend, com resposta 403, incluindo iniciar e parar robôs
-- Nenhum caminho pela interface altera `is_superuser`; ninguém altera o próprio acesso
+- Nenhum caminho pela interface altera `is_superuser`; ninguém altera o próprio acesso nem concede um grupo com permissões que não tem
+- Logs de execução só para quem tem `executions.view_execucao`
 - Alterações de acesso registradas e não editáveis
 - Execução de scripts restrita a uma pasta aprovada, sem `shell=True` e com tempo limite
+- Robôs recebem só uma lista de variáveis permitidas e as `ROBO_*`, nunca o `SECRET_KEY`, o token do agente ou o resto do `.env`
+- Worker e agentes não depuráveis (`PR_SET_DUMPABLE`): um robô do mesmo usuário não lê o ambiente deles em `/proc`
+- Opcional e recomendado em produção: robôs com outro usuário do sistema (`ROBOS_USUARIO` no worker, `AGENTE_USUARIO_ROBOS` no agente), para não lerem o `.env` nem o banco
 - WebSocket do navegador só para usuário logado e com validação de origem (`AllowedHostsOriginValidator`)
-- Agente autenticado por token no cabeçalho (nunca na URL), guardado só como hash, mostrado uma única vez e trocável a qualquer momento
+- Agente autenticado por token no cabeçalho (nunca na URL), guardado só como hash, mostrado uma única vez e trocável a qualquer momento; a revogação vale já na mensagem seguinte
+- O agente em Go recusa `ws://` para host que não seja local e limita a 64 KB cada mensagem recebida
 - O agente nunca recebe comando cru: só o identificador do robô, resolvido dentro da pasta aprovada dele
 - Log exibido com escape automático do Django (nunca com `|safe`)
 - Links externos com `rel="noopener noreferrer"`

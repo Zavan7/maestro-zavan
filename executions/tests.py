@@ -11,7 +11,7 @@ from channels.layers import get_channel_layer
 from channels.routing import URLRouter
 from channels.testing import WebsocketCommunicator
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import AnonymousUser
+from django.contrib.auth.models import AnonymousUser, Permission
 from django.db.models import ProtectedError
 from django.test import Client, TestCase
 from django.urls import path
@@ -22,6 +22,34 @@ from executions.models import Execucao
 from robots.models import Robo
 
 User = get_user_model()
+
+
+def criar_usuario_que_ve_execucoes(username: str = "analista"):
+    """Cria um usuário com a permissão de ver execuções.
+
+    Args:
+        username: nome do usuário; a senha é sempre ``senha123``.
+
+    Returns:
+        O usuário criado.
+
+    English:
+        Creates a user with the permission to view executions.
+
+        Args:
+            username: the user's name; the password is always
+                ``senha123``.
+
+        Returns:
+            The created user.
+    """
+    usuario = User.objects.create_user(username=username, password="senha123")
+    usuario.user_permissions.add(
+        Permission.objects.get(
+            codename="view_execucao", content_type__app_label="executions"
+        )
+    )
+    return usuario
 
 
 class ExecucaoModelTest(TestCase):
@@ -139,9 +167,7 @@ class ExecutionViewsTest(TestCase):
             Creates a user, a robot and an execution with a log.
         """
         self.client = Client()
-        self.usuario = User.objects.create_user(
-            username="analista", password="senha123"
-        )
+        self.usuario = criar_usuario_que_ve_execucoes()
         self.robo = Robo.objects.create(
             nome="robo-teste",
             caminho_script="/scripts/x.py",
@@ -192,6 +218,22 @@ class ExecutionViewsTest(TestCase):
         response = self.client.get("/execucoes/99999/")
         self.assertEqual(response.status_code, 404)
 
+    def test_sem_permissao_nao_ve_lista_nem_log(self):
+        """Logado, mas sem ``view_execucao``, recebe 403 nas duas telas.
+
+        English:
+            Logged in but without ``view_execucao``, gets 403 on both
+            pages.
+        """
+        User.objects.create_user(username="visitante", password="senha123")
+        self.client.login(username="visitante", password="senha123")
+
+        for url in ("/execucoes/", f"/execucoes/{self.execucao.pk}/"):
+            with self.subTest(url=url):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 403)
+                self.assertNotContains(response, "linha 1", status_code=403)
+
 
 class LogAoVivoViewTest(TestCase):
     """Testes da tela de detalhe com o log ao vivo.
@@ -206,9 +248,7 @@ class LogAoVivoViewTest(TestCase):
         English:
             Creates a user and a robot, and logs in.
         """
-        self.usuario = User.objects.create_user(
-            username="analista", password="senha123"
-        )
+        self.usuario = criar_usuario_que_ve_execucoes()
         self.robo = Robo.objects.create(
             nome="robo-teste",
             caminho_script="robo.py",
@@ -291,9 +331,7 @@ class ExecucaoConsumerTest(TestCase):
         English:
             Creates a user, a robot and a running execution.
         """
-        self.usuario = User.objects.create_user(
-            username="analista", password="senha123"
-        )
+        self.usuario = criar_usuario_que_ve_execucoes()
         robo = Robo.objects.create(
             nome="robo-teste",
             caminho_script="robo.py",
@@ -331,6 +369,21 @@ class ExecucaoConsumerTest(TestCase):
 
         self.assertFalse(conectado)
         self.assertEqual(codigo, 4401)
+
+    async def test_recusa_quem_nao_tem_permissao(self):
+        """Logado, mas sem ``view_execucao``, é recusado com 4403.
+
+        English:
+            Logged in but without ``view_execucao``, is refused with
+            4403.
+        """
+        visitante = await User.objects.acreate(username="visitante")
+        comunicador = self._comunicador(visitante)
+
+        conectado, codigo = await comunicador.connect()
+
+        self.assertFalse(conectado)
+        self.assertEqual(codigo, 4403)
 
     async def test_recusa_execucao_inexistente(self):
         """Uma execução que não existe é recusada com o código 4404.

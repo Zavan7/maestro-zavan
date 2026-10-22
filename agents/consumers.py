@@ -60,7 +60,10 @@ class AgenteConsumer(AsyncJsonWebsocketConsumer):
 
     - **Autenticação**: o token vem no cabeçalho ``Authorization``; sem
       token válido de agente ativo, a conexão é recusada (4401). Não usa a
-      sessão do Django: o agente não é um usuário.
+      sessão do Django: o agente não é um usuário. A cada mensagem, a
+      conexão confere de novo se o agente segue ativo e com o mesmo
+      token; se não, fecha com 4401, mesmo que o aviso de desconexão pelo
+      Redis não tenha chegado.
     - **Uma conexão por agente**: ao conectar, avisa o grupo do agente
       antes de entrar nele; uma conexão anterior que ainda esteja aberta
       fecha com 4409. Sem isso, um agente reiniciado receberia cada
@@ -78,7 +81,10 @@ class AgenteConsumer(AsyncJsonWebsocketConsumer):
         - **Authentication**: the token comes in the ``Authorization``
           header; without a valid token of an active agent, the connection
           is refused (4401). It does not use the Django session: the agent
-          is not a user.
+          is not a user. On every message, the connection checks again
+          that the agent is still active and with the same token; if not,
+          it closes with 4401, even if the disconnect notice through Redis
+          did not arrive.
         - **One connection per agent**: on connect, it notifies the
           agent's group before joining it; an earlier connection still
           open closes with 4409. Otherwise, a restarted agent would get
@@ -92,6 +98,7 @@ class AgenteConsumer(AsyncJsonWebsocketConsumer):
     """
 
     agente_id: int | None = None
+    token_hash: str | None = None
     grupo: str | None = None
 
     async def connect(self) -> None:
@@ -112,6 +119,7 @@ class AgenteConsumer(AsyncJsonWebsocketConsumer):
             return
 
         self.agente_id = agente.pk
+        self.token_hash = agente.token_hash
         self.grupo = grupo_do_agente(agente.pk)
         await self.channel_layer.group_send(
             self.grupo, {"type": "agente.substituido"}
@@ -154,6 +162,17 @@ class AgenteConsumer(AsyncJsonWebsocketConsumer):
                 **kwargs: extra Channels arguments, unused.
         """
         assert self.agente_id is not None  # só recebe depois do connect
+        assert self.token_hash is not None
+        if not await database_sync_to_async(protocolo.credencial_vale)(
+            self.agente_id, self.token_hash
+        ):
+            logger.warning(
+                "Agente %s: token trocado ou agente desativado; "
+                "conexão encerrada.",
+                self.agente_id,
+            )
+            await self.close(code=FECHAMENTO_SEM_TOKEN)
+            return
         tratadores: dict[
             str, Callable[[int, dict[str, Any]], Awaitable[None]]
         ] = {

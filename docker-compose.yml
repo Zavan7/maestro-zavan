@@ -48,8 +48,9 @@ services:
     command: >-
       sh -c "python manage.py migrate --noinput &&
              python manage.py runserver 0.0.0.0:8000"
+    # Só na máquina local: o runserver não é para ficar exposto na rede.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
 
   worker:
     <<: *maestro
@@ -76,6 +77,8 @@ services:
         required: false
     environment:
       MAESTRO_URL: ws://web:8000/ws/agente/
+      # A rede interna do compose não tem TLS; fora dela use wss://.
+      AGENTE_PERMITIR_WS_SEM_TLS: "1"
       AGENTE_PASTA_ROBOS: /robos
       AGENTE_PASTA_VENVS: /var/lib/agente/venvs
     volumes:

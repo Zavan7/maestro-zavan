@@ -300,7 +300,9 @@ func TestRequirementsRodaNoProprioVenv(t *testing.T) {
 		t.Fatalf("fim = %+v, linhas = %q", fim, c.linhasComAmbiente(31))
 	}
 	saida := c.linhas(31)
-	if ultima := saida[len(saida)-1]; ultima != filepath.Join(venvs, "coleta") {
+	pastaDoRobo, _ := filepath.EvalSymlinks(filepath.Join(g.op.PastaRobos, "coleta"))
+	esperado := filepath.Join(venvs, ambiente.NomeDoVenv(g.op.PastaRobos, pastaDoRobo))
+	if ultima := saida[len(saida)-1]; ultima != esperado {
 		t.Errorf("rodou com %q, esperado o venv do robô", ultima)
 	}
 }

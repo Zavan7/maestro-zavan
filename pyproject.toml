@@ -10,6 +10,7 @@ dependencies = [
     "channels-redis>=4.3.0",
     "daphne>=4.2.3",
     "django>=6.1",
+    "django-axes>=8.3.1",
     "dotenv>=0.9.9",
     "redis>=8.1.0",
 ]
@@ -37,6 +38,11 @@ convention = "google"
 
 [tool.mypy]
 plugins = ["mypy_django_plugin.main"]
+
+[[tool.mypy.overrides]]
+# O django-axes não publica tipos.
+module = ["axes.*"]
+ignore_missing_imports = true
 
 [tool.django-stubs]
 django_settings_module = "maestro.settings"

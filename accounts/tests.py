@@ -8,13 +8,91 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from agents.models import Agente
 
 User = get_user_model()
+
+
+@override_settings(AXES_ENABLED=True)
+class BloqueioDeLoginTest(TestCase):
+    """Testes do bloqueio após tentativas de senha erradas (django-axes).
+
+    Nos testes o axes vem desligado (``AXES_ENABLED``); aqui ele é ligado.
+
+    English:
+        Tests for the lockout after wrong password attempts
+        (django-axes).
+
+        The axes package is off in tests (``AXES_ENABLED``); it is turned
+        on here.
+    """
+
+    def setUp(self):
+        """Cria o usuário que vai errar a senha.
+
+        English:
+            Creates the user who will get the password wrong.
+        """
+        User.objects.create_user(username="analista", password="senha123")
+        User.objects.create_user(username="outro", password="senha123")
+
+    def _entrar(self, username, password):
+        """Tenta o login pela tela, como o navegador faria.
+
+        English:
+            Tries to log in through the page, like the browser would.
+        """
+        return self.client.post(
+            reverse("login"), {"username": username, "password": password}
+        )
+
+    def test_cinco_erros_bloqueiam_ate_a_senha_certa(self):
+        """Depois de 5 erros, nem a senha certa entra, e a tela avisa.
+
+        English:
+            After 5 errors, not even the right password gets in, and the
+            page says so.
+        """
+        for _ in range(5):
+            self._entrar("analista", "errada")
+
+        response = self._entrar("analista", "senha123")
+
+        self.assertEqual(response.status_code, 429)
+        self.assertContains(
+            response, "Tentativas demais com senha errada.", status_code=429
+        )
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_quatro_erros_ainda_deixam_entrar(self):
+        """Abaixo do limite, a senha certa entra normalmente.
+
+        English:
+            Below the limit, the right password logs in normally.
+        """
+        for _ in range(4):
+            self._entrar("analista", "errada")
+
+        response = self._entrar("analista", "senha123")
+
+        self.assertEqual(response.status_code, 302)
+
+    def test_bloqueio_e_por_usuario(self):
+        """O bloqueio de um usuário não impede outro de entrar.
+
+        English:
+            One user's lockout does not stop another from logging in.
+        """
+        for _ in range(5):
+            self._entrar("analista", "errada")
+
+        response = self._entrar("outro", "senha123")
+
+        self.assertEqual(response.status_code, 302)
 
 
 class LogoutTest(TestCase):

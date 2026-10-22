@@ -12,10 +12,13 @@ from django.contrib.auth.models import Group, Permission, User
 from django.test import Client, TestCase
 from django.utils import timezone
 
+from config.forms import NovoUsuarioForm
 from config.models import ConfiguracaoSistema, RegistroAcesso
 from config.services import (
     AlteracaoRecusada,
     alternar_ativo,
+    criar_usuario,
+    grupos_que_pode_conceder,
     limpar_historico,
     trocar_grupo,
 )
@@ -194,6 +197,7 @@ class ServicosDeAcessoTest(TestCase):
         )
         self.alvo.groups.add(Group.objects.get(name="Operador"))
         self.admin_rpa = Group.objects.get(name="Administrador RPA")
+        self.admin_sistema = Group.objects.get(name="Administrador do sistema")
 
     def test_trocar_grupo_substitui_e_registra(self):
         """Trocar o grupo substitui o atual e grava o registro de auditoria.
@@ -202,14 +206,97 @@ class ServicosDeAcessoTest(TestCase):
             Changing the group replaces the current one and writes the audit
             record.
         """
-        trocar_grupo(self.admin, self.alvo, self.admin_rpa)
+        trocar_grupo(self.admin, self.alvo, self.admin_sistema)
 
-        self.assertEqual(list(self.alvo.groups.all()), [self.admin_rpa])
+        self.assertEqual(list(self.alvo.groups.all()), [self.admin_sistema])
         registro = RegistroAcesso.objects.get()
         self.assertEqual(registro.autor, self.admin)
         self.assertEqual(
-            registro.detalhe, "analista: Operador → Administrador RPA"
+            registro.detalhe, "analista: Operador → Administrador do sistema"
         )
+
+    def test_nao_concede_grupo_com_permissoes_que_nao_tem(self):
+        """O Administrador do sistema não dá o grupo Administrador RPA.
+
+        Ele gerencia usuários, mas não edita robôs; conceder o grupo seria
+        ganhar essa permissão por tabela. Recusado, nada muda nem é
+        registrado.
+
+        English:
+            The system administrator cannot grant the RPA administrator
+            group.
+
+            They manage users but do not edit robots; granting the group
+            would be gaining that permission indirectly. Once refused,
+            nothing changes or is recorded.
+        """
+        with self.assertRaisesMessage(AlteracaoRecusada, "permissões"):
+            trocar_grupo(self.admin, self.alvo, self.admin_rpa)
+
+        self.assertEqual(
+            list(self.alvo.groups.values_list("name", flat=True)),
+            ["Operador"],
+        )
+        self.assertFalse(RegistroAcesso.objects.exists())
+
+    def test_grupos_que_pode_conceder(self):
+        """Cada um concede só os grupos contidos nas próprias permissões.
+
+        English:
+            Each user grants only the groups within their own
+            permissions.
+        """
+        chefe = User.objects.create_superuser(
+            username="chefe", password="senha123"
+        )
+
+        self.assertNotIn(self.admin_rpa, grupos_que_pode_conceder(self.admin))
+        self.assertIn(self.admin_sistema, grupos_que_pode_conceder(self.admin))
+        self.assertEqual(
+            set(grupos_que_pode_conceder(chefe)), set(Group.objects.all())
+        )
+
+    def test_superusuario_concede_qualquer_grupo(self):
+        """Um superusuário pode dar o grupo Administrador RPA.
+
+        English:
+            A superuser can grant the RPA administrator group.
+        """
+        chefe = User.objects.create_superuser(
+            username="chefe", password="senha123"
+        )
+
+        trocar_grupo(chefe, self.alvo, self.admin_rpa)
+
+        self.assertEqual(list(self.alvo.groups.all()), [self.admin_rpa])
+
+    def test_criar_usuario_recusa_grupo_com_mais_permissoes(self):
+        """``criar_usuario`` também recusa, mesmo com o form já válido.
+
+        A view restringe as opções do formulário; o serviço confere de
+        novo, para quem o chamar por outro caminho.
+
+        English:
+            ``criar_usuario`` refuses too, even with an already valid
+            form.
+
+            The view narrows the form choices; the service checks again,
+            for anyone calling it another way.
+        """
+        form = NovoUsuarioForm(
+            {
+                "username": "intruso",
+                "password1": "Maestro#2026x",
+                "password2": "Maestro#2026x",
+                "grupo": self.admin_rpa.pk,
+            }
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+
+        with self.assertRaises(AlteracaoRecusada):
+            criar_usuario(self.admin, form)
+
+        self.assertFalse(User.objects.filter(username="intruso").exists())
 
     def test_trocar_para_sem_grupo_remove_todos(self):
         """Trocar para nenhum grupo remove todos os grupos do usuário.
@@ -315,6 +402,7 @@ class ConfigUsersViewsTest(TestCase):
         )
         self.alvo.groups.add(Group.objects.get(name="Operador"))
         self.admin_rpa = Group.objects.get(name="Administrador RPA")
+        self.admin_sistema = Group.objects.get(name="Administrador do sistema")
         self.client.login(username="admin_sistema", password="senha123")
 
     def test_lista_mostra_os_usuarios(self):
@@ -352,13 +440,62 @@ class ConfigUsersViewsTest(TestCase):
         """
         response = self.client.post(
             f"/configuracoes/usuarios/{self.alvo.pk}/grupo/",
+            {"grupo": self.admin_sistema.pk},
+            follow=True,
+        )
+
+        self.assertEqual(list(self.alvo.groups.all()), [self.admin_sistema])
+        self.assertContains(
+            response, "Grupo de &#x27;analista&#x27; alterado."
+        )
+
+    def test_trocar_para_grupo_com_mais_poder_e_recusado(self):
+        """Pela tela, dar um grupo com mais permissões vira mensagem.
+
+        English:
+            Through the page, granting a group with more permissions
+            becomes a message.
+        """
+        response = self.client.post(
+            f"/configuracoes/usuarios/{self.alvo.pk}/grupo/",
             {"grupo": self.admin_rpa.pk},
             follow=True,
         )
 
-        self.assertEqual(list(self.alvo.groups.all()), [self.admin_rpa])
-        self.assertContains(
-            response, "Grupo de &#x27;analista&#x27; alterado."
+        self.assertEqual(
+            list(self.alvo.groups.values_list("name", flat=True)),
+            ["Operador"],
+        )
+        self.assertContains(response, "dá permissões que você não tem")
+
+    def test_lista_so_oferece_grupos_que_pode_conceder(self):
+        """O seletor de grupo não mostra o Administrador RPA.
+
+        English:
+            The group selector does not show the RPA administrator.
+        """
+        response = self.client.get("/configuracoes/usuarios/")
+
+        self.assertNotIn(self.admin_rpa, response.context["grupos"])
+        self.assertIn(self.admin_sistema, response.context["grupos"])
+
+    def test_grupo_invalido_vira_mensagem(self):
+        """Um ``grupo`` que não é número dá mensagem, e não erro 500.
+
+        English:
+            A non-numeric ``grupo`` gives a message, not a 500 error.
+        """
+        response = self.client.post(
+            f"/configuracoes/usuarios/{self.alvo.pk}/grupo/",
+            {"grupo": "abc"},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Grupo inválido.")
+        self.assertEqual(
+            list(self.alvo.groups.values_list("name", flat=True)),
+            ["Operador"],
         )
 
     def test_grupo_inexistente_responde_404(self):
@@ -866,6 +1003,29 @@ class CriarUsuarioTest(TestCase):
         self.assertEqual(
             User.objects.filter(username="admin_sistema").count(), 1
         )
+
+    def test_nao_cria_conta_em_grupo_com_mais_poder(self):
+        """O Administrador do sistema não cria uma conta Administrador RPA.
+
+        O grupo nem aparece entre as opções, então o formulário o recusa.
+
+        English:
+            The system administrator cannot create an RPA administrator
+            account.
+
+            The group is not even among the choices, so the form refuses
+            it.
+        """
+        admin_rpa = Group.objects.get(name="Administrador RPA")
+
+        response = self.client.post(self.URL, self._dados(grupo=admin_rpa.pk))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(
+            admin_rpa, response.context["form"].fields["grupo"].queryset
+        )
+        self.assertFalse(User.objects.filter(username="analista").exists())
+        self.assertFalse(RegistroAcesso.objects.exists())
 
     def test_operador_recebe_403(self):
         """Sem gerenciar_usuarios, a página responde 403.

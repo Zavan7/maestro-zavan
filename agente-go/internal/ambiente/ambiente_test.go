@@ -1,6 +1,8 @@
 package ambiente
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"slices"
@@ -46,7 +48,7 @@ func TestNomeDoVenvVemDoCaminhoDoRobo(t *testing.T) {
 	robos := t.TempDir()
 	real, _ := filepath.EvalSymlinks(robos)
 	casos := map[string]string{
-		filepath.Join(real, "patrice", "desafio_rpa"): "patrice__desafio_rpa",
+		filepath.Join(real, "patrice", "desafio_rpa"): "patrice__desafio_rpa-" + resumo("patrice/desafio_rpa"),
 		real: "_raiz",
 	}
 	for pasta, esperado := range casos {
@@ -56,15 +58,39 @@ func TestNomeDoVenvVemDoCaminhoDoRobo(t *testing.T) {
 	}
 }
 
-func TestAmbienteLimpoNaoVazaVenvNemToken(t *testing.T) {
+func TestNomeDoVenvNaoColide(t *testing.T) {
+	robos := t.TempDir()
+	real, _ := filepath.EvalSymlinks(robos)
+	aninhada := NomeDoVenv(robos, filepath.Join(real, "a", "b"))
+	achatada := NomeDoVenv(robos, filepath.Join(real, "a__b"))
+	if aninhada == achatada {
+		t.Errorf("a/b e a__b dividem o ambiente %q", aninhada)
+	}
+}
+
+// resumo são os 8 primeiros caracteres do SHA-256, como no NomeDoVenv.
+func resumo(caminho string) string {
+	soma := sha256.Sum256([]byte(caminho))
+	return hex.EncodeToString(soma[:])[:8]
+}
+
+func TestAmbienteLimpoSoDeixaPassarOPermitido(t *testing.T) {
 	limpo := AmbienteLimpo([]string{
 		"PATH=/opt/venv/bin:/usr/bin",
 		"VIRTUAL_ENV=/opt/venv",
 		"UV_PROJECT_ENVIRONMENT=/outro",
 		"MAESTRO_TOKEN=mae_x",
+		"AGENTE_PASTA_ROBOS=/robos",
+		"SECRET_KEY=segredo",
 		"HOME=/home/robo",
+		"ROBO_SENHA_SAP=s3nh4",
+		"UV_CACHE_DIR=/cache",
+		"LC_ALL=pt_BR.UTF-8",
 	})
-	esperado := []string{"PATH=/usr/bin", "HOME=/home/robo", "PYTHONUNBUFFERED=1"}
+	esperado := []string{
+		"PATH=/usr/bin", "HOME=/home/robo", "ROBO_SENHA_SAP=s3nh4",
+		"UV_CACHE_DIR=/cache", "LC_ALL=pt_BR.UTF-8", "PYTHONUNBUFFERED=1",
+	}
 	if !slices.Equal(limpo, esperado) {
 		t.Errorf("ambiente = %q", limpo)
 	}
@@ -87,8 +113,9 @@ func TestPlanejarGuardaCadaAmbienteForaDaPasta(t *testing.T) {
 
 		plano := Planejar(filepath.Join(pasta, "main.py"), programas, robos, "/venvs")
 
-		if !slices.Contains(plano.Env, variavel+"/venvs/coleta") {
-			t.Errorf("%s: env = %q, esperado %s/venvs/coleta", arquivo, plano.Env, variavel)
+		venv := "/venvs/coleta-" + resumo("coleta")
+		if !slices.Contains(plano.Env, variavel+venv) {
+			t.Errorf("%s: env = %q, esperado %s%s", arquivo, plano.Env, variavel, venv)
 		}
 	}
 }

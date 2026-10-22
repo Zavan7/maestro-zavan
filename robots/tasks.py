@@ -36,7 +36,7 @@ from executions.ao_vivo import LinhaDoLog, publicar_linhas
 from executions.models import Execucao
 from robots.ambiente import Programas, rodar_robo
 from robots.conclusao import desfecho, finalizar_execucao
-from robots.executor import Motivo
+from robots.executor import Motivo, Usuario
 
 INTERVALO_DESPACHO_SEGUNDOS = 0.5
 
@@ -388,6 +388,11 @@ def executar_robo(execucao_id: int) -> None:
             ao_receber_linha=log.adicionar,
             a_cada_volta=log.despachar,
             venv_atual=sys.prefix if sys.prefix != sys.base_prefix else None,
+            usuario=(
+                Usuario.ler(settings.ROBOS_USUARIO)
+                if settings.ROBOS_USUARIO
+                else None
+            ),
         )
 
     fim = desfecho(motivo, codigo_saida, timeout)

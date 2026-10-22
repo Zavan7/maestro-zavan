@@ -4,7 +4,9 @@ English:
     Tests for the robots app: model, views and trigger service.
 """
 
+import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -28,12 +30,16 @@ from robots.ambiente import (
     rodar_robo,
 )
 from robots.conclusao import desfecho
-from robots.executor import Motivo, executar
+from robots.executor import Motivo, Usuario, executar
 from robots.models import Robo
 from robots.services import DisparoRecusado, disparar_execucao
 from robots.tasks import LogAoVivo, LogLimitado, executar_robo
 
 User = get_user_model()
+
+# Nome do venv da pasta ``coleta``: o sufixo é o SHA-256 de "coleta".
+# English: venv name of the ``coleta`` folder (suffix is its SHA-256).
+NOME_COLETA = "coleta-d6c252e7"
 
 
 class RoboModelTest(TestCase):
@@ -439,6 +445,130 @@ class ExecutorTest(TestCase):
 
         self.assertEqual(resultado.motivo, Motivo.PARADO)
         self.assertEqual(resultado.codigo_saida, -9)
+
+    @skipUnless(
+        sys.platform == "linux" and os.geteuid() == 0,
+        "trocar de usuário exige Linux e root",
+    )
+    def test_roda_com_outro_usuario(self):
+        """Com ``usuario``, o robô roda com aquele uid e gid.
+
+        English:
+            With ``usuario``, the robot runs with that uid and gid.
+        """
+        linhas: list[str] = []
+
+        executar(
+            # O Python do venv pode estar numa pasta que o outro usuário
+            # não lê; o sh do sistema, não.
+            ["/bin/sh", "-c", 'echo "$(id -u) $(id -g)"'],
+            cwd=Path("/"),
+            timeout_segundos=10,
+            deve_parar=lambda: False,
+            ao_receber_linha=linhas.append,
+            usuario=Usuario(65534, 65534),
+        )
+
+        self.assertEqual(linhas, ["65534 65534"])
+
+
+class UsuarioDosRobosTest(TestCase):
+    """Testes da leitura de ``ROBOS_USUARIO``.
+
+    English:
+        Tests for reading ``ROBOS_USUARIO``.
+    """
+
+    def test_le_uid_e_gid(self):
+        """``"1001:1002"`` vira uid 1001 e gid 1002.
+
+        English:
+            ``"1001:1002"`` becomes uid 1001 and gid 1002.
+        """
+        self.assertEqual(Usuario.ler(" 1001:1002 "), Usuario(1001, 1002))
+
+    @skipUnless(sys.platform != "win32", "usuários do sistema exigem Unix")
+    def test_le_o_nome_de_um_usuario(self):
+        """Um nome vira o uid e o grupo principal do usuário.
+
+        English:
+            A name becomes the user's uid and primary group.
+        """
+        import pwd
+
+        registro = pwd.getpwuid(os.getuid())
+
+        self.assertEqual(
+            Usuario.ler(registro.pw_name),
+            Usuario(registro.pw_uid, registro.pw_gid),
+        )
+
+    def test_recusa_texto_invalido(self):
+        """Usuário inexistente ou uid que não é número dão ValueError.
+
+        English:
+            A nonexistent user or a non-numeric uid raise ValueError.
+        """
+        for texto in ("nao-existe-no-sistema", "robo:grupo", "1001:"):
+            with self.subTest(texto=texto), self.assertRaises(ValueError):
+                Usuario.ler(texto)
+
+
+@skipUnless(
+    sys.platform == "linux" and os.geteuid() != 0,
+    "o root lê o /proc de qualquer processo; rode como outro usuário",
+)
+class ProtegerProcessoTest(TestCase):
+    """Testes de ``proteger_processo`` com processos reais.
+
+    English:
+        Tests for ``proteger_processo`` with real processes.
+    """
+
+    ESPIAO = (
+        "import os, sys\n"
+        "try:\n"
+        "    open(f'/proc/{os.getppid()}/environ').read()\n"
+        "except PermissionError:\n"
+        "    sys.exit(1)\n"
+    )
+
+    def _filho_le_o_pai(self, proteger):
+        """Roda um pai que cria um filho que tenta ler o ambiente dele.
+
+        English:
+            Runs a parent that creates a child that tries to read its
+            environment.
+        """
+        pai = (
+            "import subprocess, sys\n"
+            "from robots.executor import proteger_processo\n"
+            f"if {proteger}:\n"
+            "    assert proteger_processo()\n"
+            f"sys.exit(subprocess.run([sys.executable, '-c', {self.ESPIAO!r}])"
+            ".returncode)\n"
+        )
+        return subprocess.run(
+            [sys.executable, "-c", pai], cwd=Path.cwd(), timeout=30
+        ).returncode
+
+    def test_sem_protecao_o_filho_le_o_ambiente(self):
+        """Sem a proteção, o mesmo usuário lê o ``/proc`` do pai.
+
+        English:
+            Without the protection, the same user reads the parent's
+            ``/proc``.
+        """
+        self.assertEqual(self._filho_le_o_pai(proteger=False), 0)
+
+    def test_com_protecao_o_filho_nao_le(self):
+        """Com a proteção, ler o ``/proc`` do pai dá PermissionError.
+
+        English:
+            With the protection, reading the parent's ``/proc`` raises
+            PermissionError.
+        """
+        self.assertEqual(self._filho_le_o_pai(proteger=True), 1)
 
 
 class LogLimitadoTest(TestCase):
@@ -1027,8 +1157,28 @@ class AmbienteDoRoboTest(TestCase):
         aninhada = self.pasta / "notas"
         aninhada.mkdir()
 
-        self.assertEqual(nome_do_venv(self.raiz, aninhada), "coleta__notas")
+        self.assertEqual(
+            nome_do_venv(self.raiz, aninhada), "coleta__notas-6843b62d"
+        )
+        self.assertEqual(nome_do_venv(self.raiz, self.pasta), NOME_COLETA)
         self.assertEqual(nome_do_venv(self.raiz, self.raiz), "_raiz")
+
+    def test_nome_do_venv_nao_colide(self):
+        """``coleta/notas`` e a pasta ``coleta__notas`` têm venvs distintos.
+
+        English:
+            ``coleta/notas`` and the ``coleta__notas`` folder get
+            different venvs.
+        """
+        aninhada = self.pasta / "notas"
+        aninhada.mkdir()
+        parecida = self.raiz / "coleta__notas"
+        parecida.mkdir()
+
+        self.assertNotEqual(
+            nome_do_venv(self.raiz, aninhada),
+            nome_do_venv(self.raiz, parecida),
+        )
 
     def test_ambiente_limpo_nao_vaza_o_venv_nem_o_token(self):
         """Sai o venv ativo (variáveis e PATH) e o token; entra o -u.
@@ -1056,6 +1206,38 @@ class AmbienteDoRoboTest(TestCase):
             },
         )
 
+    def test_ambiente_limpo_so_deixa_passar_o_permitido(self):
+        """Segredos do Maestro saem; ``ROBO_*`` e o básico ficam.
+
+        English:
+            Maestro's secrets go out; ``ROBO_*`` and the basics stay.
+        """
+        limpo = ambiente_limpo(
+            {
+                "PATH": "/usr/bin",
+                "LANG": "pt_BR.UTF-8",
+                "LC_ALL": "pt_BR.UTF-8",
+                "SECRET_KEY": "segredo",
+                "DATABASE_URL": "postgres://u:s@h/db",
+                "CELERY_BROKER_URL": "redis://redis:6379/0",
+                "AWS_SECRET_ACCESS_KEY": "x",
+                "ROBO_SENHA_SAP": "s",
+                "UV_INDEX_URL": "https://pypi.org/simple",
+            }
+        )
+
+        self.assertEqual(
+            limpo,
+            {
+                "PATH": "/usr/bin",
+                "LANG": "pt_BR.UTF-8",
+                "LC_ALL": "pt_BR.UTF-8",
+                "ROBO_SENHA_SAP": "s",
+                "UV_INDEX_URL": "https://pypi.org/simple",
+                "PYTHONUNBUFFERED": "1",
+            },
+        )
+
     def test_plano_guarda_cada_ambiente_fora_da_pasta(self):
         """Com pasta de venvs, cada ferramenta recebe a sua variável.
 
@@ -1075,7 +1257,7 @@ class AmbienteDoRoboTest(TestCase):
                         arquivo.unlink()
                 self._arquivos(**arquivos)
                 plano = planejar(self.script, Programas(), self.raiz, venvs)
-                self.assertEqual(plano.env[variavel], str(venvs / "coleta"))
+                self.assertEqual(plano.env[variavel], str(venvs / NOME_COLETA))
 
     def test_pipenv_sincroniza_com_lock_e_instala_sem(self):
         """Com Pipfile.lock, ``pipenv sync``; só com Pipfile, ``install``.
@@ -1126,7 +1308,7 @@ class AmbienteDoRoboTest(TestCase):
         (motivo, codigo), linhas = self._rodar(pasta_venvs=venvs)
 
         self.assertEqual((motivo, codigo), (Motivo.CONCLUIDO, 0))
-        self.assertEqual(linhas[-1], str(venvs / "coleta"))
+        self.assertEqual(linhas[-1], str(venvs / NOME_COLETA))
 
     def test_preparo_que_falha_e_preparo_falhou(self):
         """Um requirements.txt inválido faz o preparo falhar, sem rodar.
@@ -1177,7 +1359,7 @@ class AmbienteDoRoboTest(TestCase):
         (motivo, codigo), linhas = self._rodar(pasta_venvs=venvs)
 
         self.assertEqual((motivo, codigo), (Motivo.CONCLUIDO, 0))
-        self.assertEqual(linhas[-1], str(venvs / "coleta"))
+        self.assertEqual(linhas[-1], str(venvs / NOME_COLETA))
 
     def test_desfecho_dos_motivos_de_ambiente(self):
         """Ambiente inválido não repete; preparo que falhou repete.

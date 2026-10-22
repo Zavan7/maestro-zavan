@@ -15,6 +15,8 @@ func definir(t *testing.T, url, token, pasta string) {
 	t.Setenv("AGENTE_UV", "")
 	t.Setenv("AGENTE_PYTHON", "")
 	t.Setenv("AGENTE_PASTA_VENVS", "")
+	t.Setenv("AGENTE_USUARIO_ROBOS", "")
+	t.Setenv("AGENTE_PERMITIR_WS_SEM_TLS", "")
 }
 
 func TestCarregarValidaEAplicaPadroes(t *testing.T) {
@@ -92,5 +94,51 @@ func TestCarregarRecusaPastaDeVenvsRelativa(t *testing.T) {
 
 	if _, err := Carregar(); err == nil || !strings.Contains(err.Error(), "AGENTE_PASTA_VENVS") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestWsSemTLSSoNaMaquinaLocalOuComPermissao(t *testing.T) {
+	casos := []struct {
+		url, permitir string
+		valida        bool
+	}{
+		{"ws://localhost:8000/ws/agente/", "", true},
+		{"ws://127.0.0.1:8000/ws/agente/", "", true},
+		{"ws://[::1]:8000/ws/agente/", "", true},
+		{"wss://maestro.exemplo.com/ws/agente/", "", true},
+		{"ws://maestro.exemplo.com/ws/agente/", "", false},
+		{"ws://192.168.0.10:8000/ws/agente/", "", false},
+		{"ws://web:8000/ws/agente/", "1", true},
+	}
+	for _, caso := range casos {
+		definir(t, caso.url, "mae_abc", t.TempDir())
+		t.Setenv("AGENTE_PERMITIR_WS_SEM_TLS", caso.permitir)
+
+		_, err := Carregar()
+
+		if (err == nil) != caso.valida {
+			t.Errorf("%s (permitir=%q): err = %v", caso.url, caso.permitir, err)
+		}
+	}
+}
+
+func TestUsuarioDosRobos(t *testing.T) {
+	definir(t, "ws://localhost/ws/agente/", "mae_abc", t.TempDir())
+	t.Setenv("AGENTE_USUARIO_ROBOS", "1001:1002")
+
+	cfg, err := Carregar()
+
+	if os.Geteuid() != 0 {
+		if err == nil || !strings.Contains(err.Error(), "root") {
+			t.Fatalf("sem root deveria recusar: %v", err)
+		}
+		return
+	}
+	if err != nil || cfg.UsuarioRobos == nil || cfg.UsuarioRobos.UID != 1001 || cfg.UsuarioRobos.GID != 1002 {
+		t.Fatalf("cfg = %+v, err = %v", cfg.UsuarioRobos, err)
+	}
+	t.Setenv("AGENTE_USUARIO_ROBOS", "usuario-que-nao-existe")
+	if _, err := Carregar(); err == nil {
+		t.Error("usuário inexistente deveria ser recusado")
 	}
 }

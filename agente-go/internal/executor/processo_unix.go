@@ -13,11 +13,17 @@ var (
 	sinalForcado = syscall.SIGKILL
 )
 
-// prepararGrupo coloca o robô num grupo de processos próprio, cujo id é
-// o pid dele. Os filhos herdam o grupo, e um sinal ao grupo alcança
-// todos.
-func prepararGrupo(cmd *exec.Cmd) {
+// prepararProcesso coloca o robô num grupo de processos próprio, cujo id
+// é o pid dele: os filhos herdam o grupo, e um sinal ao grupo alcança
+// todos. Com usuario, o robô roda com esse usuário e grupo, sem os
+// grupos extras do agente.
+func prepararProcesso(cmd *exec.Cmd, usuario *Usuario) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if usuario != nil {
+		cmd.SysProcAttr.Credential = &syscall.Credential{
+			Uid: usuario.UID, Gid: usuario.GID, Groups: []uint32{},
+		}
+	}
 }
 
 // sinalizarGrupo manda o sinal ao grupo inteiro. Se ninguém do grupo

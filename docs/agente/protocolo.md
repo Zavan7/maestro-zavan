@@ -37,7 +37,7 @@ O agente **conecta** no Maestro, e nunca o contrário: conexão de saída passa 
 
 | Item | Valor |
 |---|---|
-| Endereço | `ws://<host>/ws/agente/` em desenvolvimento; **`wss://`** em produção |
+| Endereço | **`wss://<host>/ws/agente/`**; `ws://` só para `localhost` ou com `AGENTE_PERMITIR_WS_SEM_TLS=1` (veja **Segurança**) |
 | Autenticação | cabeçalho `Authorization: Bearer <token>` |
 | Formato | cada mensagem é um objeto JSON em texto UTF-8, com o campo `tipo` |
 | Conexões por agente | uma; uma nova conexão com o mesmo token derruba a anterior |
@@ -52,7 +52,7 @@ O agente não manda `Origin` nem cookie: a rota do agente não passa pelas prote
 |---|---|
 | Sem token, token errado ou agente desativado | o aperto de mão é recusado com HTTP **403**; não adianta tentar de novo com o mesmo token |
 | Outra conexão do mesmo agente foi aberta | esta conexão fecha com o código **4409** |
-| O token foi trocado ou o agente foi desativado na aba | a conexão fecha com o código **4401** |
+| O token foi trocado ou o agente foi desativado na aba | a conexão fecha com o código **4401**: na hora, pelo aviso do Redis, ou na mensagem seguinte do agente, que sempre confere se ele continua ativo e com o mesmo token |
 | Queda de rede ou Maestro reiniciado | a conexão cai; o agente reconecta |
 
 **Reconexão:** espera crescente (1 s, 2 s, 4 s… até 30 s) e volta a 1 s depois de conectar. Um 403 encerra o agente com uma mensagem clara, porque o token não vale mais.
@@ -196,7 +196,7 @@ Na pasta do robô, antes de cada execução:
 
 ### Onde fica o ambiente de cada robô
 
-Sem configuração, cada ferramenta usa o próprio padrão (o `.venv` da pasta, no uv e no pip; a pasta de venvs do poetry, do pdm ou do pipenv). Com uma **pasta de venvs** (`AGENTE_PASTA_VENVS` no agente, `ROBOS_PASTA_VENVS` no worker), o ambiente de cada robô fica fora da pasta dele, em `<pasta de venvs>/<nome do robô>`, com o nome tirado do caminho (`coleta/notas` vira `coleta__notas`):
+Sem configuração, cada ferramenta usa o próprio padrão (o `.venv` da pasta, no uv e no pip; a pasta de venvs do poetry, do pdm ou do pipenv). Com uma **pasta de venvs** (`AGENTE_PASTA_VENVS` no agente, `ROBOS_PASTA_VENVS` no worker), o ambiente de cada robô fica fora da pasta dele, em `<pasta de venvs>/<nome do robô>`, com o nome tirado do caminho mais os 8 primeiros caracteres hexadecimais do SHA-256 do caminho relativo, com `/` (`coleta` vira `coleta-d6c252e7`, `coleta/notas` vira `coleta__notas-6843b62d`). O sufixo impede que `coleta/notas` e uma pasta chamada `coleta__notas` dividam o mesmo ambiente. Um robô direto na pasta aprovada usa `_raiz`. Worker e agente geram o mesmo nome:
 
 | Ferramenta | Como |
 |---|---|
@@ -210,7 +210,19 @@ Sem configuração, cada ferramenta usa o próprio padrão (o `.venv` da pasta, 
 
 ### Ambiente do processo
 
-O robô não herda o ambiente virtual de quem o roda: `VIRTUAL_ENV`, `UV_PROJECT_ENVIRONMENT`, `POETRY_ACTIVE`, `PIPENV_ACTIVE`, `PYTHONHOME` e `PYTHONPATH` são removidos, e a pasta `bin` do venv ativo sai do `PATH`. Sem isso, um `uv sync` ou `poetry install` instalaria as dependências do robô no ambiente do Maestro ou do agente. O `MAESTRO_TOKEN` também é removido, e `PYTHONUNBUFFERED=1` é ligado.
+O robô recebe só uma **lista de variáveis permitidas**; todo o resto do ambiente de quem o roda (o `.env` do Maestro com o `SECRET_KEY`, o `MAESTRO_TOKEN`, credenciais de nuvem) fica de fora:
+
+| Passa | Quais |
+|---|---|
+| Sistema | `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `TERM`, `LANG`, `LANGUAGE`, `TZ`, `TMPDIR`, `TEMP`, `TMP`, `DISPLAY`, `WAYLAND_DISPLAY`, `XDG_RUNTIME_DIR` e, no Windows, `SYSTEMROOT`, `SYSTEMDRIVE`, `WINDIR`, `COMSPEC`, `PATHEXT`, `APPDATA`, `LOCALAPPDATA`, `USERPROFILE`, `PROGRAMDATA` |
+| Rede e certificados | `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `ALL_PROXY` (também em minúsculas), `SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, `PLAYWRIGHT_BROWSERS_PATH` |
+| Por prefixo | `LC_*`, `UV_*`, `PIP_*`, `POETRY_*`, `PDM_*`, `PIPENV_*` e **`ROBO_*`** |
+
+Para entregar uma credencial a um robô, defina-a com o prefixo `ROBO_` no ambiente do worker ou do agente (`ROBO_SENHA_SAP=...`). Mesmo com prefixo permitido, `UV_PROJECT_ENVIRONMENT`, `POETRY_ACTIVE` e `PIPENV_ACTIVE` saem, porque descrevem o venv de quem roda o robô; a pasta `bin` desse venv também sai do `PATH`. Sem isso, um `uv sync` ou `poetry install` instalaria as dependências do robô no ambiente do Maestro ou do agente. `PYTHONUNBUFFERED=1` é ligado.
+
+O worker e os agentes se marcam como não depuráveis (`prctl(PR_SET_DUMPABLE, 0)`, no Linux) ao iniciar. Sem isso, um robô do mesmo usuário leria o `MAESTRO_TOKEN` em `/proc/<pid>/environ` do agente, mesmo fora do ambiente dele. O robô, iniciado com `exec`, volta ao normal.
+
+Para isolar de vez, rode os robôs com outro usuário do sistema: `AGENTE_USUARIO_ROBOS` no agente e `ROBOS_USUARIO` no worker, com `"uid:gid"` ou o nome do usuário. O robô roda com esse usuário e grupo, sem grupos extras, e não lê os arquivos de quem o iniciou (o `.env`, o banco, o token). Exige que o agente ou o worker rode como root; a pasta dos robôs e a de venvs precisam ser acessíveis a esse usuário.
 
 ### Preparar à mão
 
@@ -239,7 +251,10 @@ Toda mensagem do agente é validada antes de tocar no banco:
 1. **O agente nunca recebe comando cru.** `robo` é um identificador, resolvido dentro da pasta aprovada do agente: `(pasta / robo).resolve()` precisa continuar dentro de `pasta` (o que barra `../`, caminhos absolutos e links simbólicos para fora). Mesmo um Maestro comprometido não consegue mandar executar um comando qualquer.
 2. **Sem shell.** O processo é iniciado com a lista de argumentos, nunca por um interpretador de comandos.
 3. **Token como segredo.** Guarde-o fora do código (variável de ambiente ou arquivo com permissão só do usuário do agente). Se vazar, gere outro na aba: o antigo deixa de valer e a conexão aberta com ele cai.
-4. **`wss://` em produção.** Sem TLS, o token viaja em texto.
+4. **`wss://` fora da máquina.** Sem TLS, o token viaja em texto. O agente em Go recusa `ws://` para um host que não seja `localhost`, `127.0.0.1` ou `::1`; `AGENTE_PERMITIR_WS_SEM_TLS=1` libera, para uma rede privada como a do Docker compose.
+5. **Revogação imediata.** Cada mensagem do agente confere no banco se ele continua ativo e com o mesmo token; se não, a conexão fecha com 4401. Não depende do aviso pelo Redis chegar.
+6. **Mensagens limitadas.** O agente em Go recusa mensagem do Maestro maior que 64 KB (a conexão cai e ele reconecta).
+7. **Robô isolado de quem o roda.** Lista de variáveis permitidas, processo não depurável e, opcionalmente, outro usuário do sistema (veja **Ambiente do processo**).
 
 ---
 
@@ -250,7 +265,7 @@ O que o agente em Go precisa ter, além do que a referência em Python já faz:
 - **Ambiente de cada robô:** detectar o gerenciador de dependências da pasta do robô, preparar e rodar dentro do ambiente dele (veja **Ambiente do robô**). Feito em `internal/ambiente`.
 - **Encerramento em árvore:** no Linux, grupo de processos próprio (`Setpgid`) e sinal para o grupo; no Windows, Job Object. `exec.CommandContext` sozinho mata só o processo principal.
 - **Fila de reenvio:** se a conexão cair no meio de uma execução, guardar `log` e `fim` e reenviar depois de reconectar. A referência perde essas mensagens. O Maestro ignora `fim` repetido, mas linhas de `log` reenviadas aparecem duplicadas; reenvie só o que não saiu.
-- **Configuração:** `MAESTRO_URL`, `MAESTRO_TOKEN` e a pasta aprovada, lidos do ambiente ou de um arquivo de configuração.
+- **Configuração:** `MAESTRO_URL`, `MAESTRO_TOKEN`, `AGENTE_PASTA_ROBOS` e, opcionais, `AGENTE_PASTA_VENVS`, `AGENTE_USUARIO_ROBOS` e `AGENTE_PERMITIR_WS_SEM_TLS`, lidos do ambiente.
 - **Serviço:** rodar como serviço do sistema (systemd ou serviço do Windows), com o próprio log.
 
 ### Como testar contra o Maestro

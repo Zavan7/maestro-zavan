@@ -89,6 +89,43 @@ def autenticar(token: str) -> Agente | None:
     ).first()
 
 
+def credencial_vale(agente_id: int, token_hash: str) -> bool:
+    """Diz se o agente continua ativo e com o mesmo token da conexão.
+
+    O aviso de "desconectar" pelo Redis pode não chegar (Redis fora no
+    instante da troca, por exemplo); por isso a conexão confere isto a
+    cada mensagem, e não só ao conectar. Um token trocado ou um agente
+    desativado deixa de valer na mensagem seguinte.
+
+    Args:
+        agente_id: id do agente da conexão.
+        token_hash: hash do token com que a conexão foi aberta.
+
+    Returns:
+        ``True`` se o agente está ativo e o token não mudou.
+
+    English:
+        Tells whether the agent is still active and with the connection's
+        token.
+
+        The "disconnect" notice through Redis may not arrive (Redis down
+        at the moment of the change, for example); that is why the
+        connection checks this on every message, not only on connect. A
+        replaced token or a deactivated agent stops working on the next
+        message.
+
+        Args:
+            agente_id: id of the connection's agent.
+            token_hash: hash of the token the connection was opened with.
+
+        Returns:
+            ``True`` if the agent is active and the token did not change.
+    """
+    return Agente.objects.filter(
+        pk=agente_id, ativo=True, token_hash=token_hash
+    ).exists()
+
+
 def registrar_sinal(agente_id: int) -> None:
     """Anota que o agente deu sinal agora.
 

@@ -36,6 +36,7 @@ from config.services import (
     AlteracaoRecusada,
     alternar_ativo,
     criar_usuario,
+    grupos_que_pode_conceder,
     limite_da_retencao,
     pode_alterar,
     trocar_grupo,
@@ -323,7 +324,7 @@ def config_users(request: RequisicaoAutenticada) -> HttpResponse:
 
     contexto = {
         "linhas": linhas,
-        "grupos": Group.objects.order_by("name"),
+        "grupos": grupos_que_pode_conceder(request.user),
         "registros": RegistroAcesso.objects.select_related("autor")[:15],
     }
     return render(request, "config/usuarios.html", contexto)
@@ -362,7 +363,10 @@ def config_user_group(request: RequisicaoAutenticada, pk: int) -> HttpResponse:
     alvo = get_object_or_404(User, pk=pk)
 
     if request.method == "POST":
-        grupo_id = request.POST.get("grupo")
+        grupo_id = request.POST.get("grupo", "")
+        if grupo_id and not grupo_id.isdigit():
+            messages.error(request, "Grupo inválido.")
+            return redirect("config_users")
         grupo = get_object_or_404(Group, pk=grupo_id) if grupo_id else None
         try:
             trocar_grupo(request.user, alvo, grupo)
@@ -448,13 +452,14 @@ def config_user_create(request: RequisicaoAutenticada) -> HttpResponse:
             Redirects to the user list after creating, or renders the form
             (empty or with errors).
     """
+    grupos = grupos_que_pode_conceder(request.user)
     if request.method == "POST":
-        form = NovoUsuarioForm(request.POST)
+        form = NovoUsuarioForm(request.POST, grupos=grupos)
         if form.is_valid():
             usuario = criar_usuario(request.user, form)
             messages.success(request, f"Usuário '{usuario.username}' criado.")
             return redirect("config_users")
     else:
-        form = NovoUsuarioForm()
+        form = NovoUsuarioForm(grupos=grupos)
 
     return render(request, "config/usuario_form.html", {"form": form})
