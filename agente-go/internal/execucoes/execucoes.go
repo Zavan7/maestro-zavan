@@ -41,6 +41,9 @@ type Opcoes struct {
 	PastaVenvs string
 	// TempoPreparo substitui TempoMaximoPreparo se positivo.
 	TempoPreparo time.Duration
+	// UsuarioRobos, se definido, é o usuário do sistema com que o
+	// preparo e os robôs rodam.
+	UsuarioRobos *executor.Usuario
 	// Enviar entrega uma mensagem do protocolo à fila de saída.
 	Enviar func(any)
 	Logger *slog.Logger
@@ -254,6 +257,7 @@ func (g *Gerente) rodarNoAmbiente(
 			Parar:              parar,
 			AoReceberLinha:     linha,
 			EsperaEncerramento: g.op.EsperaEncerramento,
+			Usuario:            g.op.UsuarioRobos,
 		})
 	}
 

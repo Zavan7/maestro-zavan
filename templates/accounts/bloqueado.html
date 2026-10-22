@@ -1,0 +1,32 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="{% static 'img/logo-mark.svg' %}" type="image/svg+xml" />
+    <title>Acesso bloqueado — Maestro</title>
+    <link rel="stylesheet" href="{% static 'css/base.css' %}" />
+    <link rel="stylesheet" href="{% static 'css/login.css' %}" />
+  </head>
+  <body class="login-page">
+    <div class="terminal-card">
+      <div class="terminal-titlebar">
+        <span class="dot dot-red"></span>
+        <span class="dot dot-yellow"></span>
+        <span class="dot dot-green"></span>
+        <span class="terminal-path">~/maestro/login</span>
+      </div>
+
+      <div class="terminal-body">
+        <div class="logo-line">
+          <img src="{% static 'img/logo.svg' %}" alt="Maestro" class="logo-img" />
+        </div>
+
+        <p class="error-message">Tentativas demais com senha errada.</p>
+        <p>Por segurança, o login deste usuário fica bloqueado por 15 minutos. Se esqueceu a senha, peça a um administrador do sistema para redefini-la.</p>
+        <a href="{% url 'login' %}" class="link-btn">voltar para o login</a>
+      </div>
+    </div>
+  </body>
+</html>

@@ -16,7 +16,9 @@ const (
 	sinalForcado
 )
 
-func prepararGrupo(*exec.Cmd) {}
+// prepararProcesso ignora o usuário fora do Unix: trocar de usuário no
+// Windows pede outra API (um token de logon).
+func prepararProcesso(*exec.Cmd, *Usuario) {}
 
 func sinalizarGrupo(cmd *exec.Cmd, _ sinal) {
 	if cmd.Process != nil {

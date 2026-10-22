@@ -5,6 +5,24 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e 
 
 ## [Não lançado]
 
+### Segurança
+
+Correções da varredura de segurança. As marcadas com **(quebra)** mudam o comportamento de quem já usa o Maestro.
+
+- **(quebra)** Os robôs só recebem variáveis de ambiente de uma lista de permitidas (PATH, HOME, idioma, fuso, proxy, certificados, as das ferramentas de dependências) e as que começam com `ROBO_`; antes recebiam tudo menos o token, e um robô do worker lia o `SECRET_KEY`. Credenciais de robôs passam a usar o prefixo `ROBO_`. Vale para o worker, o agente em Go e o de referência
+- O worker e os agentes (Go e referência) se marcam como não depuráveis (`PR_SET_DUMPABLE`), para um robô do mesmo usuário não ler o `MAESTRO_TOKEN` em `/proc/<pid>/environ`
+- `ROBOS_USUARIO` (worker) e `AGENTE_USUARIO_ROBOS` (agente): rodam os robôs com outro usuário do sistema, sem grupos extras
+- **(quebra)** Ver execuções e logs exige a permissão `executions.view_execucao`, nas telas e no WebSocket (fecha com 4403); a migração dá a permissão aos três grupos. Antes qualquer usuário logado, mesmo sem grupo, lia os logs
+- Quem gerencia usuários só concede grupos cujas permissões já tem: o Administrador do sistema não cria mais contas Administrador RPA para si. A regra vale na tela, no formulário de criação e no serviço
+- Um `grupo` que não é número na troca de grupo vira mensagem, e não erro 500
+- Login bloqueado por 15 minutos depois de 5 senhas erradas para o mesmo usuário e IP (django-axes), com tela própria
+- O WebSocket do agente confere a cada mensagem se o agente continua ativo e com o mesmo token; revogado, a conexão cai (4401) mesmo que o aviso pelo Redis se perca
+- HTTPS em produção: cookies `Secure`, redirecionamento para https e HSTS, controlados por `USAR_HTTPS`, `HSTS_SEGUNDOS`, `ATRAS_DE_PROXY_HTTPS` e `CSRF_TRUSTED_ORIGINS`
+- **(quebra)** O agente em Go recusa `ws://` para um host que não seja local (o token iria sem criptografia); `AGENTE_PERMITIR_WS_SEM_TLS=1` libera, como no Docker
+- O agente em Go limita a 64 KB cada mensagem recebida do Maestro
+- **(quebra)** O nome do ambiente de cada robô ganha um sufixo do hash do caminho (`coleta-d6c252e7`), para `coleta/notas` e `coleta__notas` não dividirem o mesmo venv; os ambientes são recriados na primeira execução
+- Docker: a porta 8000 do `web` só abre em `127.0.0.1`
+
 ### Adicionado
 
 - Executor próprio (`robots/executor.py`), sem Django nem Celery: acompanha o processo, lê a saída linha a linha e confere tempo e pedido de parada a cada segundo

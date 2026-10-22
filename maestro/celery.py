@@ -40,7 +40,15 @@ import os
 from celery import Celery
 from celery.schedules import crontab
 
+from robots.executor import proteger_processo
+
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "maestro.settings")
+
+# Um robô roda com o mesmo usuário do worker; sem isto, ele leria o
+# SECRET_KEY e o resto do .env no /proc/<pid>/environ do worker. Este
+# módulo é importado por todo processo do Maestro (maestro/__init__.py),
+# então a proteção vale para o worker, o beat e o servidor.
+proteger_processo()
 
 app = Celery("maestro")
 app.config_from_object("django.conf:settings", namespace="CELERY")

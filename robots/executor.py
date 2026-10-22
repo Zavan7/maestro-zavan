@@ -41,6 +41,7 @@ English:
 import os
 import signal
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -50,9 +51,112 @@ from pathlib import Path
 from queue import Empty, Queue
 from typing import IO
 
+PR_SET_DUMPABLE = 4
+
 PAUSA_LEITURA_SEGUNDOS = 0.1
 INTERVALO_VERIFICACAO_SEGUNDOS = 1.0
 ESPERA_ENCERRAMENTO_SEGUNDOS = 5.0
+
+
+@dataclass(frozen=True, slots=True)
+class Usuario:
+    """Usuário e grupo do sistema com que os robôs rodam.
+
+    English:
+        System user and group the robots run as.
+    """
+
+    uid: int
+    gid: int
+
+    @classmethod
+    def ler(cls, texto: str) -> Usuario:
+        """Lê ``"uid:gid"`` ou o nome de um usuário do sistema.
+
+        Com um nome, o grupo é o grupo principal desse usuário.
+
+        Args:
+            texto: ``"1001:1001"`` ou ``"robo"``.
+
+        Returns:
+            O usuário lido.
+
+        Raises:
+            ValueError: se o texto não é ``uid:gid`` nem um usuário que
+                existe.
+
+        English:
+            Reads ``"uid:gid"`` or a system user's name.
+
+            With a name, the group is that user's primary group.
+
+            Args:
+                texto: ``"1001:1001"`` or ``"robo"``.
+
+            Returns:
+                The user read.
+
+            Raises:
+                ValueError: if the text is neither ``uid:gid`` nor an
+                    existing user.
+        """
+        texto = texto.strip()
+        uid, separador, gid = texto.partition(":")
+        if separador:
+            return cls(int(uid), int(gid))
+        import pwd
+
+        try:
+            registro = pwd.getpwnam(texto)
+        except KeyError:
+            raise ValueError(
+                f"usuário do sistema inexistente: {texto!r}"
+            ) from None
+        return cls(registro.pw_uid, registro.pw_gid)
+
+
+def proteger_processo() -> bool:
+    """Impede que outros processos do mesmo usuário leiam este processo.
+
+    Um robô roda com o mesmo usuário de quem o iniciou (o worker ou o
+    agente), e por padrão o Linux deixa um processo ler o
+    ``/proc/<pid>/environ`` de outro do mesmo usuário: foi assim que um
+    robô de teste leu o ``MAESTRO_TOKEN`` do agente, mesmo com a variável
+    fora do ambiente dele. ``prctl(PR_SET_DUMPABLE, 0)`` fecha isso
+    (o ``/proc`` do processo passa a ser só do root, e ninguém do mesmo
+    usuário consegue depurá-lo). Vale para este processo e os criados
+    por ``fork``; um programa iniciado com ``exec`` (o robô) volta ao
+    normal.
+
+    Em sistemas sem ``prctl`` (macOS, Windows), não faz nada.
+
+    Returns:
+        ``True`` se a proteção foi aplicada.
+
+    English:
+        Stops other processes of the same user from reading this one.
+
+        A robot runs as the same user that started it (the worker or the
+        agent), and by default Linux lets a process read another
+        same-user process's ``/proc/<pid>/environ``: that is how a test
+        robot read the agent's ``MAESTRO_TOKEN``, even with the variable
+        out of its own environment. ``prctl(PR_SET_DUMPABLE, 0)`` closes
+        that (the process's ``/proc`` becomes root-only, and nobody of the
+        same user can debug it). It applies to this process and those
+        created by ``fork``; a program started with ``exec`` (the robot)
+        goes back to normal.
+
+        On systems without ``prctl`` (macOS, Windows), it does nothing.
+
+        Returns:
+            ``True`` if the protection was applied.
+    """
+    if not sys.platform.startswith("linux"):
+        return False
+    import ctypes
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    return libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) == 0
 
 
 class Motivo(Enum):
@@ -112,6 +216,7 @@ def executar(
     ao_receber_linha: Callable[[str], None],
     a_cada_volta: Callable[[], None] | None = None,
     env: dict[str, str] | None = None,
+    usuario: Usuario | None = None,
     intervalo_verificacao: float = INTERVALO_VERIFICACAO_SEGUNDOS,
     espera_encerramento: float = ESPERA_ENCERRAMENTO_SEGUNDOS,
 ) -> ResultadoExecucao:
@@ -135,6 +240,9 @@ def executar(
             despachar o que foi acumulado mesmo com o robô calado.
         env: variáveis de ambiente do processo; ``None`` herda as de
             quem chama.
+        usuario: usuário e grupo do sistema com que o processo roda;
+            ``None`` usa os de quem chama. Trocar exige que quem chama
+            possa (root, por exemplo).
         intervalo_verificacao: de quanto em quanto tempo ``deve_parar`` é
             perguntada.
         espera_encerramento: quanto esperar o processo sair depois do
@@ -168,6 +276,9 @@ def executar(
                 is silent.
             env: process environment variables; ``None`` inherits the
                 caller's.
+            usuario: system user and group the process runs as; ``None``
+                uses the caller's. Switching requires the caller to be
+                allowed to (root, for example).
             intervalo_verificacao: how often ``deve_parar`` is asked.
             espera_encerramento: how long to wait for the process to exit
                 after the polite request (``terminate``) before forcing it
@@ -183,6 +294,9 @@ def executar(
         comando,
         cwd=cwd,
         env=env,
+        user=usuario.uid if usuario else None,
+        group=usuario.gid if usuario else None,
+        extra_groups=[] if usuario else None,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

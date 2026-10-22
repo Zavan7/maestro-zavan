@@ -37,6 +37,14 @@ type Pedido struct {
 	AoReceberLinha func(string)
 	// EsperaEncerramento substitui EsperaEncerramentoPadrao se positiva.
 	EsperaEncerramento time.Duration
+	// Usuario, se definido, é o usuário do sistema com que o processo
+	// roda. Exige que o agente possa trocar de usuário (root).
+	Usuario *Usuario
+}
+
+// Usuario é um usuário e um grupo do sistema, pelos números.
+type Usuario struct {
+	UID, GID uint32
 }
 
 // Resultado diz por que a execução terminou e com qual código de saída.
@@ -65,7 +73,7 @@ func Executar(p Pedido) (Resultado, error) {
 	cmd.Env = p.Env
 	cmd.Stdout = escrita
 	cmd.Stderr = escrita
-	prepararGrupo(cmd)
+	prepararProcesso(cmd, p.Usuario)
 	if err := cmd.Start(); err != nil {
 		_ = leitura.Close()
 		_ = escrita.Close()

@@ -28,6 +28,7 @@ English:
     Maestro's own ``uv.lock``.
 """
 
+import hashlib
 import os
 import shutil
 import sys
@@ -37,24 +38,69 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
-from robots.executor import Motivo, executar
+from robots.executor import Motivo, Usuario, executar
 
 TEMPO_MAXIMO_PREPARO_SEGUNDOS = 900
 PREFIXO = "[ambiente]"
 
-# Variáveis de quem roda o robô que não podem vazar para ele: um venv
-# ativo faria o uv, o poetry ou o pipenv instalarem as dependências do
-# robô no ambiente do Maestro ou do agente, e o token é a credencial do
-# agente.
-VARIAVEIS_REMOVIDAS = (
-    "VIRTUAL_ENV",
-    "UV_PROJECT_ENVIRONMENT",
-    "POETRY_ACTIVE",
-    "PIPENV_ACTIVE",
-    "PYTHONHOME",
-    "PYTHONPATH",
-    "MAESTRO_TOKEN",
+# O robô recebe só estas variáveis de quem o roda, e não o ambiente
+# inteiro: o worker carrega o .env do Maestro (SECRET_KEY, senhas) e o
+# agente, o MAESTRO_TOKEN. Uma lista do que pode passar não deixa vazar
+# por esquecimento uma variável nova. Configuração própria do robô
+# (usuário e senha de um sistema, por exemplo) vai em variáveis com o
+# prefixo ROBO_.
+VARIAVEIS_PERMITIDAS = frozenset(
+    {
+        "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TERM",
+        "LANG", "LANGUAGE", "TZ", "TMPDIR", "TEMP", "TMP",
+        "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR",
+        "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY",
+        "http_proxy", "https_proxy", "no_proxy", "all_proxy",
+        "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE",
+        "PLAYWRIGHT_BROWSERS_PATH",
+        # Windows
+        "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "PATHEXT",
+        "APPDATA", "LOCALAPPDATA", "USERPROFILE", "PROGRAMDATA",
+    }
+)  # fmt: skip
+PREFIXOS_PERMITIDOS = (
+    "LC_",
+    "ROBO_",
+    "UV_",
+    "PIP_",
+    "POETRY_",
+    "PDM_",
+    "PIPENV_",
 )
+# Mesmo com o prefixo permitido, estas descrevem o ambiente de quem roda
+# o robô: um uv sync com o UV_PROJECT_ENVIRONMENT do Maestro instalaria
+# as dependências do robô no venv do Maestro.
+VARIAVEIS_DO_AMBIENTE_ATUAL = frozenset(
+    {"UV_PROJECT_ENVIRONMENT", "POETRY_ACTIVE", "PIPENV_ACTIVE"}
+)
+
+
+def variavel_permitida(nome: str) -> bool:
+    """Diz se uma variável de quem roda o robô pode passar para ele.
+
+    Args:
+        nome: nome da variável de ambiente.
+
+    Returns:
+        ``True`` se a variável está na lista ou tem um prefixo permitido.
+
+    English:
+        Tells whether a variable of whoever runs the robot may pass to it.
+
+        Args:
+            nome: environment variable name.
+
+        Returns:
+            ``True`` if the variable is listed or has an allowed prefix.
+    """
+    if nome in VARIAVEIS_DO_AMBIENTE_ATUAL:
+        return False
+    return nome in VARIAVEIS_PERMITIDAS or nome.startswith(PREFIXOS_PERMITIDOS)
 
 
 class Ferramenta(StrEnum):
@@ -200,10 +246,14 @@ def detectar(pasta: Path) -> tuple[Ferramenta, str]:
 
 
 def nome_do_venv(pasta_robos: Path, pasta_do_robo: Path) -> str:
-    """Dá a cada robô um nome de ambiente a partir do caminho dele.
+    """Dá a cada robô um nome de ambiente único a partir do caminho dele.
 
-    ``coleta/notas`` vira ``coleta__notas``; um robô direto na pasta
-    aprovada vira ``_raiz``. É o mesmo nome que o agente em Go usa.
+    ``coleta/notas`` vira ``coleta__notas-<8 hex>``; o sufixo são os 8
+    primeiros caracteres do SHA-256 do caminho relativo, com ``/``. Sem
+    ele, ``coleta/notas`` e uma pasta chamada ``coleta__notas`` dividiriam
+    o mesmo ambiente, e as dependências de um robô afetariam o outro. Um
+    robô direto na pasta aprovada vira ``_raiz``. É o mesmo nome que o
+    agente em Go usa.
 
     Args:
         pasta_robos: pasta aprovada.
@@ -213,9 +263,13 @@ def nome_do_venv(pasta_robos: Path, pasta_do_robo: Path) -> str:
         O nome da pasta do ambiente do robô.
 
     English:
-        Gives each robot an environment name from its path.
+        Gives each robot a unique environment name from its path.
 
-        ``coleta/notas`` becomes ``coleta__notas``; a robot straight in
+        ``coleta/notas`` becomes ``coleta__notas-<8 hex>``; the suffix is
+        the first 8 characters of the SHA-256 of the relative path, with
+        ``/``. Without it, ``coleta/notas`` and a folder named
+        ``coleta__notas`` would share the same environment, and one
+        robot's dependencies would affect the other. A robot straight in
         the approved folder becomes ``_raiz``. It is the same name the Go
         agent uses.
 
@@ -227,17 +281,22 @@ def nome_do_venv(pasta_robos: Path, pasta_do_robo: Path) -> str:
             The name of the robot's environment folder.
     """
     relativo = pasta_do_robo.resolve().relative_to(pasta_robos.resolve())
-    return "__".join(relativo.parts) or "_raiz"
+    if not relativo.parts:
+        return "_raiz"
+    resumo = hashlib.sha256(relativo.as_posix().encode()).hexdigest()[:8]
+    return "__".join(relativo.parts) + "-" + resumo
 
 
 def ambiente_limpo(
     base: Mapping[str, str], venv_atual: str | None = None
 ) -> dict[str, str]:
-    """Copia o ambiente de quem roda o robô, sem o que não deve vazar.
+    """Monta o ambiente do robô com só o que pode passar para ele.
 
-    Tira as variáveis de ``VARIAVEIS_REMOVIDAS`` e a pasta ``bin`` do
-    venv atual do ``PATH`` (no Docker do Maestro, ``/opt/venv/bin`` vem
-    antes de tudo no ``PATH``), e liga a saída do Python sem buffer.
+    Fica só o que ``variavel_permitida`` aceita (o resto, como o
+    ``SECRET_KEY`` do Maestro e o ``MAESTRO_TOKEN`` do agente, não
+    chega ao robô), sai do ``PATH`` a pasta ``bin`` do venv atual (no
+    Docker do Maestro, ``/opt/venv/bin`` vem antes de tudo no ``PATH``) e
+    entra a saída do Python sem buffer.
 
     Args:
         base: ambiente de quem roda o robô.
@@ -247,13 +306,13 @@ def ambiente_limpo(
         O ambiente do robô.
 
     English:
-        Copies the environment of whoever runs the robot, without what
-        must not leak.
+        Builds the robot's environment with only what may pass to it.
 
-        Removes the variables in ``VARIAVEIS_REMOVIDAS`` and the current
-        venv's ``bin`` folder from ``PATH`` (in Maestro's Docker,
-        ``/opt/venv/bin`` comes first in ``PATH``), and turns on
-        unbuffered Python output.
+        Only what ``variavel_permitida`` accepts stays (the rest, such as
+        Maestro's ``SECRET_KEY`` and the agent's ``MAESTRO_TOKEN``, does
+        not reach the robot), the current venv's ``bin`` folder leaves
+        ``PATH`` (in Maestro's Docker, ``/opt/venv/bin`` comes first in
+        ``PATH``) and unbuffered Python output comes in.
 
         Args:
             base: environment of whoever runs the robot.
@@ -263,9 +322,7 @@ def ambiente_limpo(
             The robot's environment.
     """
     ambiente = {
-        nome: valor
-        for nome, valor in base.items()
-        if nome not in VARIAVEIS_REMOVIDAS
+        nome: valor for nome, valor in base.items() if variavel_permitida(nome)
     }
     venvs = {v for v in (venv_atual, base.get("VIRTUAL_ENV")) if v}
     bins = {str(Path(venv) / "bin") for venv in venvs}
@@ -436,6 +493,7 @@ def rodar_robo(
     ambiente_base: Mapping[str, str] | None = None,
     venv_atual: str | None = None,
     timeout_preparo: float = TEMPO_MAXIMO_PREPARO_SEGUNDOS,
+    usuario: Usuario | None = None,
 ) -> tuple[Motivo, int | None]:
     """Detecta a ferramenta, prepara as dependências e roda o robô.
 
@@ -465,6 +523,8 @@ def rodar_robo(
             processo atual.
         venv_atual: venv de quem roda o robô, tirado do ``PATH``.
         timeout_preparo: tempo máximo de cada comando de preparo.
+        usuario: usuário do sistema com que o preparo e o robô rodam;
+            ``None`` usa o de quem chama.
 
     Returns:
         O motivo do fim e o código de saída, se algo chegou a rodar.
@@ -501,6 +561,8 @@ def rodar_robo(
             venv_atual: venv of whoever runs the robot, removed from
                 ``PATH``.
             timeout_preparo: maximum time of each preparation command.
+            usuario: system user the preparation and the robot run as;
+                ``None`` uses the caller's.
 
         Returns:
             Why it ended and the exit code, if something got to run.
@@ -540,6 +602,7 @@ def rodar_robo(
                 ao_receber_linha,
                 a_cada_volta,
                 env,
+                usuario,
             )
             if preparo.motivo is Motivo.PARADO:
                 return Motivo.PARADO, preparo.codigo_saida
@@ -563,6 +626,7 @@ def rodar_robo(
             ao_receber_linha,
             a_cada_volta,
             env,
+            usuario,
         )
     except OSError as erro:
         ao_receber_linha(f"{PREFIXO} o ambiente do robô não abriu: {erro}")

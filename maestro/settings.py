@@ -17,6 +17,7 @@ English:
 
 import os
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -155,6 +156,27 @@ EXECUTANDO_TESTES = sys.argv[1:2] == ["test"]
 SECRET_KEY = ler_secret_key(DEBUG, executando_testes=EXECUTANDO_TESTES)
 ALLOWED_HOSTS = env_lista("ALLOWED_HOSTS")
 
+# HTTPS: ligado por padrão fora de DEBUG e dos testes. Sem ele, o cookie
+# de sessão viaja em texto e pode ser copiado na rede. USAR_HTTPS=False
+# desliga (Docker local com DEBUG=False, por exemplo).
+USAR_HTTPS = env_bool(
+    "USAR_HTTPS", "False" if DEBUG or EXECUTANDO_TESTES else "True"
+)
+if USAR_HTTPS:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = True
+    # Começa curto: um HSTS longo errado deixa o site inacessível por
+    # HTTP até expirar. Aumente (31536000, um ano) quando o HTTPS estiver
+    # estável.
+    SECURE_HSTS_SECONDS = int(os.getenv("HSTS_SEGUNDOS", "3600"))
+# Atrás de um proxy que termina o TLS (nginx, Traefik), o Django recebe
+# HTTP; o proxy avisa pelo cabeçalho X-Forwarded-Proto. Só ligue com um
+# proxy que sempre define esse cabeçalho, senão qualquer um o forja.
+if env_bool("ATRAS_DE_PROXY_HTTPS"):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+CSRF_TRUSTED_ORIGINS = env_lista("CSRF_TRUSTED_ORIGINS")
+
 
 # Aplicações
 # O daphne vem primeiro para o runserver dele substituir o do Django e
@@ -168,6 +190,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "channels",
+    "axes",
     "accounts",
     "executions",
     "robots",
@@ -184,6 +207,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Por último, como pede o django-axes.
+    "axes.middleware.AxesMiddleware",
 ]
 
 ROOT_URLCONF = "maestro.urls"
@@ -252,6 +277,23 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # Autenticação
 LOGIN_URL = "login"
+
+# Limite de tentativas de login (django-axes), no login do Maestro e no
+# do /admin/: 5 senhas erradas seguidas para o mesmo usuário vindas do
+# mesmo IP bloqueiam esse par por 15 minutos. O par, e não só o usuário,
+# para um atacante não conseguir trancar a conta de alguém de fora.
+# Nos testes fica desligado, porque o client.login() dos testes não
+# passa a requisição que o axes precisa.
+AUTHENTICATION_BACKENDS = [
+    "axes.backends.AxesStandaloneBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
+AXES_ENABLED = not EXECUTANDO_TESTES
+AXES_FAILURE_LIMIT = 5
+AXES_COOLOFF_TIME = timedelta(minutes=15)
+AXES_LOCKOUT_PARAMETERS = [["username", "ip_address"]]
+AXES_RESET_ON_SUCCESS = True
+AXES_LOCKOUT_TEMPLATE = "accounts/bloqueado.html"
 LOGIN_REDIRECT_URL = "home"
 LOGOUT_REDIRECT_URL = "portfolio"
 
@@ -289,6 +331,12 @@ ROBOS_PASTA_VENVS = (
     if os.getenv("ROBOS_PASTA_VENVS", "").strip()
     else None
 )
+
+# Opcional: usuário do sistema com que o worker roda os robôs ("robo" ou
+# "1001:1001"). Exige que o worker possa trocar de usuário (root). Com
+# ele, um robô não lê o .env nem o db.sqlite3 do Maestro, que só o
+# usuário do Maestro pode ler.
+ROBOS_USUARIO = os.getenv("ROBOS_USUARIO", "").strip() or None
 
 
 # Django Channels: WebSocket do log ao vivo

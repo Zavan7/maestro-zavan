@@ -12,6 +12,8 @@
 //	AGENTE_PIPENV=pipenv    (opcional; robôs com Pipfile)
 //	AGENTE_PYTHON=python3   (opcional; robôs com requirements.txt ou sem gerenciador)
 //	AGENTE_PASTA_VENVS=/var/lib/agente/venvs  (opcional; venv de cada robô fora da pasta dele)
+//	AGENTE_USUARIO_ROBOS=robo  (opcional; usuário dos robôs, "nome" ou "uid:gid"; exige root)
+//	AGENTE_PERMITIR_WS_SEM_TLS=1  (opcional; aceita ws:// fora da máquina local, numa rede interna)
 //
 // O gerenciador de dependências de cada robô (uv, poetry, pdm, pipenv ou
 // pip) é detectado pela pasta dele; veja docs/agente/protocolo.md.
@@ -35,9 +37,15 @@ import (
 	"github.com/Zavan7/maestro-zavan/agente-go/internal/conexao"
 	"github.com/Zavan7/maestro-zavan/agente-go/internal/config"
 	"github.com/Zavan7/maestro-zavan/agente-go/internal/execucoes"
+	"github.com/Zavan7/maestro-zavan/agente-go/internal/protecao"
 )
 
 func main() {
+	// Antes de tudo: os robôs rodam com o mesmo usuário do agente e, sem
+	// isto, leriam o MAESTRO_TOKEN no /proc do agente.
+	if err := protecao.ProtegerProcesso(); err != nil {
+		fmt.Fprintln(os.Stderr, "aviso: não foi possível proteger o processo:", err)
+	}
 	if len(os.Args) > 1 && os.Args[1] == "ambiente" {
 		os.Exit(rodarAmbiente(os.Args[2:]))
 	}
@@ -61,11 +69,12 @@ func main() {
 	// a função intermediária.
 	var cliente *conexao.Cliente
 	gerente := execucoes.Novo(execucoes.Opcoes{
-		PastaRobos: cfg.PastaRobos,
-		Programas:  cfg.Programas(),
-		PastaVenvs: cfg.PastaVenvs,
-		Enviar:     func(v any) { cliente.Enviar(v) },
-		Logger:     logger,
+		PastaRobos:   cfg.PastaRobos,
+		Programas:    cfg.Programas(),
+		PastaVenvs:   cfg.PastaVenvs,
+		UsuarioRobos: cfg.UsuarioRobos,
+		Enviar:       func(v any) { cliente.Enviar(v) },
+		Logger:       logger,
 	})
 	cliente = conexao.Novo(cfg.URL, cfg.Token, logger, gerente.Atender)
 
@@ -107,9 +116,10 @@ func rodarAmbiente(argumentos []string) int {
 	}
 
 	gerente := execucoes.Novo(execucoes.Opcoes{
-		PastaRobos: cfg.PastaRobos,
-		Programas:  cfg.Programas(),
-		PastaVenvs: cfg.PastaVenvs,
+		PastaRobos:   cfg.PastaRobos,
+		Programas:    cfg.Programas(),
+		PastaVenvs:   cfg.PastaVenvs,
+		UsuarioRobos: cfg.UsuarioRobos,
 	})
 	motivo, codigo := gerente.RodarNoAmbiente(pastaDoRobo, args,
 		func(linha string) { fmt.Println(linha) })

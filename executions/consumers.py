@@ -13,6 +13,7 @@ from executions.ao_vivo import LinhaDoLog, nome_do_grupo, numerar_log
 from executions.models import Execucao
 
 FECHAMENTO_SEM_LOGIN = 4401
+FECHAMENTO_SEM_PERMISSAO = 4403
 FECHAMENTO_NAO_ENCONTRADA = 4404
 
 
@@ -26,9 +27,10 @@ class ExecucaoConsumer(AsyncJsonWebsocketConsumer):
     chama ``log_linhas``.
 
     A conexão só é aceita para usuário logado (a sessão vem do
-    ``AuthMiddlewareStack``) e para execução que existe, com os mesmos
-    códigos de erro em toda recusa (4401 e 4404). O navegador não manda
-    nada: o que chegar dele é ignorado.
+    ``AuthMiddlewareStack``), com a permissão ``executions.view_execucao``
+    (a mesma da tela de detalhe) e para execução que existe, com os
+    códigos de erro de cada recusa (4401, 4403 e 4404). O navegador não
+    manda nada: o que chegar dele é ignorado.
 
     English:
         Watches an execution: relays the lines and the end notice.
@@ -40,8 +42,10 @@ class ExecucaoConsumer(AsyncJsonWebsocketConsumer):
         event's ``type``: ``log.linhas`` calls ``log_linhas``.
 
         The connection is only accepted for a logged-in user (the session
-        comes from ``AuthMiddlewareStack``) and for an existing execution,
-        with the same error codes on every refusal (4401 and 4404). The
+        comes from ``AuthMiddlewareStack``), with the
+        ``executions.view_execucao`` permission (the same as the detail
+        page) and for an existing execution, with the same error codes on
+        every refusal (4401, 4403 and 4404). The
         browser sends nothing: anything it sends is ignored.
     """
 
@@ -73,6 +77,13 @@ class ExecucaoConsumer(AsyncJsonWebsocketConsumer):
         usuario = self.scope.get("user")
         if usuario is None or not usuario.is_authenticated:
             await self.close(code=FECHAMENTO_SEM_LOGIN)
+            return
+        # A mesma permissão da tela de detalhe: o log pode ter dados
+        # pessoais, e não basta estar logado para vê-lo.
+        if not await database_sync_to_async(usuario.has_perm)(
+            "executions.view_execucao"
+        ):
+            await self.close(code=FECHAMENTO_SEM_PERMISSAO)
             return
 
         execucao_id = int(self.scope["url_route"]["kwargs"]["pk"])

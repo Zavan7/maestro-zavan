@@ -58,9 +58,13 @@
         </td>
         <td>
           {% if robo.ultima_execucao %}
+          {% if perms.executions.view_execucao %}
           <a href="{% url 'execution_detail' robo.ultima_execucao.id %}" class="table-link">
             <span class="status-badge status-{{ robo.ultima_execucao.status }}">{{ robo.ultima_execucao.get_status_display }}</span>
           </a>
+          {% else %}
+          <span class="status-badge status-{{ robo.ultima_execucao.status }}">{{ robo.ultima_execucao.get_status_display }}</span>
+          {% endif %}
           {% if robo.ultima_execucao.iniciado_em %}
           <span class="last-run-time">{{ robo.ultima_execucao.iniciado_em|timesince }} atrás</span>
           {% endif %}

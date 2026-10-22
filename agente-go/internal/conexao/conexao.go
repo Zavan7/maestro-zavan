@@ -23,7 +23,10 @@ const (
 
 	// Códigos de fechamento definidos em docs/agente/protocolo.md.
 	codigoTokenRevogado = 4401
-	codigoSubstituido   = 4409
+
+	// LimiteMensagemRecebida é o maior comando aceito do Maestro, em bytes.
+	LimiteMensagemRecebida = 64 * 1024
+	codigoSubstituido      = 4409
 )
 
 // ErrTokenRecusado indica que o Maestro recusou o token (HTTP 403).
@@ -104,6 +107,10 @@ func (c *Cliente) conversar(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	defer conn.Close()
+	// Nenhum comando do Maestro passa de poucos KB; o limite impede que
+	// um Maestro comprometido (ou alguém no meio de uma conexão ws://)
+	// esgote a memória do agente com uma mensagem gigante.
+	conn.SetReadLimit(LimiteMensagemRecebida)
 	c.logger.Info("conectado ao Maestro", "url", c.url)
 
 	// Quando esta conversa acabar (por qualquer motivo), o escritor para.

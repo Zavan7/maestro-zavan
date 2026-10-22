@@ -29,11 +29,13 @@
             <span class="nav-icon" aria-hidden="true">◆</span>
             robôs
           </a>
+          {% if perms.executions.view_execucao %}
           <a href="{% url 'execution_list' %}"
              class="nav-link {% if 'execution' in request.resolver_match.url_name %}active{% endif %}">
             <span class="nav-icon" aria-hidden="true">▤</span>
             execuções
           </a>
+          {% endif %}
           <a href="{% url 'schedule_list' %}"
              class="nav-link {% if 'schedule' in request.resolver_match.url_name %}active{% endif %}">
             <span class="nav-icon" aria-hidden="true">◷</span>

@@ -6,6 +6,7 @@ English:
 """
 
 from datetime import timedelta
+from typing import Any
 from unittest import mock
 
 from channels.layers import get_channel_layer
@@ -23,6 +24,7 @@ from agents.protocolo import (
     MensagemInvalida,
     autenticar,
     confirmar_inicio,
+    credencial_vale,
     receber_fim,
     receber_linhas,
 )
@@ -125,6 +127,24 @@ class ProtocoloTest(BaseAgente):
         self.agente.ativo = False
         self.agente.save()
         self.assertIsNone(autenticar(self.token))
+
+    def test_credencial_vale_so_com_o_mesmo_hash_e_ativo(self):
+        """Token trocado ou agente desativado invalidam a credencial.
+
+        English:
+            A rotated token or a deactivated agent invalidates the
+            credential.
+        """
+        hash_antigo = self.agente.token_hash
+        self.assertTrue(credencial_vale(self.agente.pk, hash_antigo))
+
+        self.agente.token_hash = "z" * 64
+        self.agente.save()
+        self.assertFalse(credencial_vale(self.agente.pk, hash_antigo))
+
+        self.agente.ativo = False
+        self.agente.save()
+        self.assertFalse(credencial_vale(self.agente.pk, "z" * 64))
 
     def test_confirmar_inicio_reivindica_so_pendente_do_agente(self):
         """Só uma execução pendente deste agente vira rodando.
@@ -391,6 +411,55 @@ class AgenteConsumerTest(BaseAgente):
         self.assertEqual(resposta["tipo"], "erro")
         self.assertTrue(await comunicador.receive_nothing())
         await comunicador.disconnect()
+
+    async def test_agente_revogado_e_derrubado_na_proxima_mensagem(self):
+        """Revogado com a conexão aberta, o agente cai e nada é gravado.
+
+        O aviso de desconexão pode se perder (Redis fora, por exemplo); por
+        isso cada mensagem confere a credencial de novo. Aqui o banco muda
+        direto, sem esse aviso.
+
+        English:
+            Revoked with the connection open, the agent is dropped and
+            nothing is saved.
+
+            The disconnect notice can be lost (Redis down, for example);
+            that is why each message checks the credential again. Here the
+            database changes directly, without that notice.
+        """
+        execucao = await Execucao.objects.acreate(
+            robo=self.robo, status=Execucao.Status.RODANDO
+        )
+        casos: dict[str, dict[str, Any]] = {
+            "token trocado": {"token_hash": "z" * 64},
+            "desativado": {"ativo": False},
+        }
+        for caso, campos in casos.items():
+            with self.subTest(caso=caso):
+                comunicador = self._comunicador(self.token)
+                conectado, _ = await comunicador.connect()
+                self.assertTrue(conectado)
+                await Agente.objects.filter(pk=self.agente.pk).aupdate(
+                    **campos
+                )
+
+                await comunicador.send_json_to(
+                    {
+                        "tipo": "log",
+                        "execucao_id": execucao.pk,
+                        "linhas": ["intruso"],
+                    }
+                )
+
+                self.assertEqual(
+                    await comunicador.receive_output(),
+                    {"type": "websocket.close", "code": 4401},
+                )
+                await execucao.arefresh_from_db()
+                self.assertEqual(execucao.log, "")
+                await Agente.objects.filter(pk=self.agente.pk).aupdate(
+                    token_hash=self.agente.token_hash, ativo=True
+                )
 
     async def test_iniciado_de_execucao_cancelada_recebe_parar(self):
         """Se a execução foi cancelada no caminho, o agente recebe parar.

@@ -58,7 +58,7 @@ from websockets.exceptions import ConnectionClosed, InvalidStatus
 from websockets.sync.client import ClientConnection, connect
 
 from robots.ambiente import Programas, rodar_robo
-from robots.executor import Motivo
+from robots.executor import Motivo, proteger_processo
 
 INTERVALO_HEARTBEAT_SEGUNDOS = 30
 INTERVALO_LOTE_SEGUNDOS = 0.5
@@ -362,6 +362,10 @@ if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
     )
+    # O token fica no ambiente deste processo: impede que um robô do
+    # mesmo usuário o leia em /proc/<pid>/environ.
+    if not proteger_processo():
+        logger.warning("não foi possível proteger o processo do agente")
     Agente(
         url=os.environ["MAESTRO_URL"],
         token=os.environ["MAESTRO_TOKEN"],

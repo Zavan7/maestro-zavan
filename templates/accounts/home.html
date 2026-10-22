@@ -51,16 +51,22 @@
       <span class="dot dot-yellow"></span>
       <span class="dot dot-green"></span>
       <span class="terminal-path">tail -f execucoes.log</span>
+      {% if perms.executions.view_execucao %}
       <a href="{% url 'execution_list' %}" class="link-btn panel-link">ver todas →</a>
+      {% endif %}
     </div>
 
     <ol class="console-feed">
       {% for execucao in execucoes_recentes %}
       <li class="console-line">
         <time>{{ execucao.iniciado_em|date:"d/m H:i"|default:"aguardando" }}</time>
+        {% if perms.executions.view_execucao %}
         <a href="{% url 'execution_detail' execucao.id %}" class="table-link">
           {{ execucao.robo.nome }}
         </a>
+        {% else %}
+        <span>{{ execucao.robo.nome }}</span>
+        {% endif %}
         <span class="status-badge status-{{ execucao.status }}">
           {{ execucao.get_status_display }}
         </span>

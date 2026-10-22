@@ -4,7 +4,7 @@ English:
     Views for the executions app.
 """
 
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, permission_required
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, render
 
@@ -14,6 +14,7 @@ from executions.models import Execucao
 
 
 @login_required
+@permission_required("executions.view_execucao", raise_exception=True)
 def execution_list(request: RequisicaoAutenticada) -> HttpResponse:
     """Lista todas as execuções, das mais recentes para as mais antigas.
 
@@ -48,6 +49,7 @@ def execution_list(request: RequisicaoAutenticada) -> HttpResponse:
 
 
 @login_required
+@permission_required("executions.view_execucao", raise_exception=True)
 def execution_detail(request: RequisicaoAutenticada, pk: int) -> HttpResponse:
     """Mostra uma execução com o log, ao vivo enquanto ela roda.
 
