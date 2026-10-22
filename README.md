@@ -8,10 +8,13 @@ Primeiro produto da **ZV Labs**.
 
 **Versão atual:** 1.1.0. Veja o [CHANGELOG](CHANGELOG.md).
 
+**Começando agora?** Vá direto ao [tutorial](#tutorial-do-zero-ao-primeiro-robô): em 15 minutos você sobe o Maestro, cadastra um robô e acompanha a primeira execução.
+
 ---
 
 ## Sumário
 
+- [Tutorial: do zero ao primeiro robô](#tutorial-do-zero-ao-primeiro-robô)
 - [Funcionalidades](#funcionalidades)
 - [Arquitetura](#arquitetura)
 - [Stack](#stack)
@@ -33,6 +36,153 @@ Primeiro produto da **ZV Labs**.
 
 ---
 
+## Tutorial: do zero ao primeiro robô
+
+Este passo a passo leva uns 15 minutos. No fim, você terá o Maestro rodando, um robô cadastrado, uma execução com o log ao vivo, um agendamento e um colega com acesso. Os detalhes técnicos de cada parte estão nas seções seguintes do README; aqui está só o caminho.
+
+### Passo 1: subir o Maestro
+
+O jeito mais simples é o Docker, que sobe tudo de uma vez (Maestro, fila, worker e agendador). Você precisa do [Docker](https://docs.docker.com/get-docker/) com o plugin `compose`.
+
+```bash
+git clone https://github.com/Zavan7/maestro-zavan.git
+cd maestro-zavan
+cp .env.example .env
+docker compose up -d --build
+```
+
+Com `DEBUG=True`, que já vem no `.env.example`, não é preciso preencher a `SECRET_KEY` para testar. Quando os containers subirem, crie o seu usuário administrador:
+
+```bash
+docker compose exec web python manage.py createsuperuser
+```
+
+> Prefere rodar sem Docker? Siga [Como rodar localmente](#como-rodar-localmente) e volte para o passo 2.
+
+### Passo 2: entrar
+
+Abra **http://localhost:8000/login/** e entre com o usuário que você acabou de criar. Você cai no **painel**, que mostra os robôs por status, a atividade dos últimos 14 dias e as execuções recentes. Por enquanto ele está vazio.
+
+À esquerda fica o menu: **início**, **robôs**, **execuções**, **agendamentos** e **configurações**.
+
+### Passo 3: escrever o script do robô
+
+Um robô é um script Python comum, dentro da pasta de robôs aprovados. Sem configuração, essa pasta é a `scripts/` do projeto, que já traz o `robo_exemplo.py`. Para um robô seu, crie por exemplo `scripts/ola/main.py`:
+
+```python
+import logging
+import os
+import sys
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+log = logging.getLogger("ola")
+
+log.info("Olá, Maestro!")
+cliente = os.getenv("ROBO_CLIENTE", "ninguém")
+log.info("Trabalhando para %s", cliente)
+
+if cliente == "ninguém":
+    log.error("Defina ROBO_CLIENTE no .env")
+    sys.exit(1)  # código diferente de 0 = falha
+```
+
+Três regras valem para qualquer robô:
+
+1. **Tudo o que ele escreve vira log.** `print`, `logging` e erros, linha a linha. Linhas com `ERROR` ou `Traceback` aparecem destacadas.
+2. **Terminar com código 0 é sucesso; qualquer outro, falha.** Uma exceção não tratada também vira falha.
+3. **O robô não vê o `.env` do Maestro.** Só passam variáveis básicas do sistema e as que começam com `ROBO_`. Para entregar uma configuração ou senha ao robô, coloque-a no `.env` com esse prefixo, por exemplo `ROBO_CLIENTE=ZV Labs`, e reinicie o worker (`docker compose restart worker`).
+
+Se o robô tem dependências, coloque na pasta dele um `requirements.txt` ou o projeto do seu gerenciador (`uv`, `poetry`, `pdm` ou `pipenv`). O Maestro detecta qual é e instala tudo antes de cada execução; veja [Dependências de cada robô](#dependências-de-cada-robô).
+
+### Passo 4: cadastrar o robô
+
+Vá em **robôs → + novo robô** e preencha:
+
+| Campo | O que colocar | Exemplo |
+|---|---|---|
+| nome | um nome curto e único | `ola` |
+| descrição | o que o robô faz (opcional) | `Primeiro teste` |
+| caminho do script | o caminho **relativo** à pasta de robôs | `ola/main.py` |
+| status | `Ativo` para poder rodar; `Manutenção` ou `Inativo` impedem o disparo | `Ativo` |
+| tempo máximo (segundos) | depois disso, a execução é encerrada e vira falha; vazio usa o padrão (300 s) | `60` |
+| novas tentativas após falha | quantas vezes repetir se falhar (0 a 5) | `0` |
+| duração esperada (segundos) | só informativo (opcional) | `5` |
+| agente | deixe em **nenhum (worker do Maestro)**; agentes ficam no [passo 8](#passo-8-opcional-rodar-robôs-em-outra-máquina) | — |
+
+Clique em **salvar**. O robô aparece na lista com o estado **parado**.
+
+### Passo 5: rodar e acompanhar
+
+1. Na lista de robôs, clique em **iniciar**. O estado muda para **rodando**.
+2. Abra **execuções** e clique na execução mais recente. O log aparece **ao vivo**, linha a linha, sem recarregar a página.
+3. Quando o robô termina, a tela mostra o status final (**sucesso** ou **falha**), a duração e o log completo.
+
+Se você não definiu `ROBO_CLIENTE`, a execução termina em **falha** com a linha de erro destacada. Defina a variável, reinicie o worker e rode de novo para ver o **sucesso**.
+
+Para interromper um robô no meio, clique em **parar** na lista de robôs. Ele recebe um aviso para encerrar e, se não encerrar em 5 segundos, é finalizado à força, junto com navegadores e outros processos que tenha aberto. A execução fica como **cancelada**.
+
+### Passo 6: agendar
+
+Vá em **agendamentos → + novo agendamento**, escolha o **robô**, o **horário** e marque os **dias da semana**. Clique em **salvar**.
+
+A partir daí, o robô dispara sozinho nesses dias e horário (fuso de São Paulo), e a execução aparece no histórico com a etiqueta **agendado**. Para suspender sem apagar, use **⏸ pausar**; para voltar, **retomar**.
+
+### Passo 7: dar acesso à equipe
+
+Vá em **configurações → gerenciar usuários → + novo usuário**, preencha os dados e escolha o grupo:
+
+| Grupo | Para quem |
+|---|---|
+| **Operador** | quem acompanha e dispara robôs: vê robôs, execuções e agendamentos; inicia e para |
+| **Administrador RPA** | quem cria robôs: tudo do Operador, mais cadastrar, editar e excluir robôs e agendamentos |
+| **Administrador do sistema** | quem cuida do Maestro: usuários, agentes, status, retenção e limites; também inicia e para robôs |
+
+Na lista de usuários dá para trocar o grupo, desativar e reativar. Ninguém altera o próprio acesso, e cada um só concede grupos cujas permissões já tem. Tudo fica registrado.
+
+### Passo 8 (opcional): rodar robôs em outra máquina
+
+Quando o robô precisa rodar em outro computador (um servidor do cliente, uma máquina com o sistema que ele automatiza), instale lá o **agente**:
+
+1. No Maestro, vá em **configurações → gerenciar agentes**, dê um nome e clique em **criar agente**. **Copie o token** que aparece: ele é mostrado uma única vez.
+2. Na outra máquina, com [Go 1.24+](https://go.dev/dl/) instalado, compile o agente:
+
+   ```bash
+   cd maestro-zavan/agente-go
+   go build -o agente .
+   ```
+
+3. Configure e rode:
+
+   ```bash
+   export MAESTRO_URL=wss://maestro.suaempresa.com/ws/agente/
+   export MAESTRO_TOKEN=mae_...                 # o token copiado
+   export AGENTE_PASTA_ROBOS=/opt/robos         # a pasta dos robôs nesta máquina
+   ./agente
+   ```
+
+   Para testar com o Maestro na mesma máquina, use `MAESTRO_URL=ws://localhost:8000/ws/agente/`. Fora dela, use `wss://`: o agente recusa `ws://` para outro host, porque o token iria sem criptografia.
+
+4. Em **configurações → gerenciar agentes**, o agente aparece **online**. Agora edite o robô e escolha esse agente no campo **agente**. O caminho do script passa a ser relativo à `AGENTE_PASTA_ROBOS`.
+
+O resto não muda: iniciar, parar, log ao vivo, agendamentos e histórico funcionam do mesmo jeito. Credenciais `ROBO_*` desses robôs ficam no ambiente do agente. No Docker, o agente já vem no `docker-compose.yml`; veja [Agente no Docker](#agente-no-docker).
+
+### Se algo der errado
+
+| Sintoma | O que verificar |
+|---|---|
+| O botão **iniciar** não aparece | Seu usuário não tem permissão para iniciar robôs; peça o grupo Operador |
+| "robô está inativo" ou "robô está manutenção" | Edite o robô e mude o status para `Ativo` |
+| "já tem uma execução em andamento" | O robô só roda uma vez por vez; espere terminar ou clique em **parar** |
+| A execução fica em **pendente** | O worker está parado. Veja **configurações → status do sistema** e, no Docker, `docker compose logs worker` |
+| Falha com "Script não encontrado" ou "Script fora do diretório permitido" | O caminho do script deve ser relativo à pasta de robôs, sem `/` no começo nem `../` |
+| Falha com `ambiente_invalido` | A ferramenta de dependências do robô (uv, poetry...) não está instalada onde ele roda |
+| O robô não acha uma variável | Ela precisa começar com `ROBO_`, e o worker (ou o agente) precisa ser reiniciado |
+| "o agente '...' está offline" | O agente não está conectado: confira o token, a `MAESTRO_URL` e o log do agente |
+| Login bloqueado | Foram 5 senhas erradas seguidas; espere 15 minutos ou peça a um administrador para redefinir a senha |
+| **403** ao abrir uma tela | Falta a permissão daquela tela; veja [Perfis e permissões](#perfis-e-permissões) |
+
+---
+
 ## Funcionalidades
 
 **Disponível hoje**
@@ -48,17 +198,20 @@ Primeiro produto da **ZV Labs**.
 - Estados visuais nas listas: rodando, agendado, pausado e parado, e a próxima execução de cada robô
 - Histórico global de execuções, com a origem de cada uma (manual ou agendamento), e tela de detalhe com duração, log numerado e linhas de erro destacadas
 - Log ao vivo na tela de detalhe, linha a linha, pelo WebSocket (Django Channels)
-- Agentes: cadastro na aba de configurações com token próprio, robôs que rodam em outra máquina e o protocolo do agente pelo WebSocket
+- Agentes: cadastro na aba de configurações com token próprio, e o agente em Go, que roda os robôs em outra máquina pelo WebSocket, com fila de reenvio se a conexão cair
+- Cada robô roda no ambiente do próprio gerenciador de dependências (uv, poetry, pdm, pipenv ou pip), detectado pela pasta dele
 - Controle de acesso por grupos (Operador, Administrador RPA e Administrador do sistema)
 - Aba de configurações com gestão de usuários: criação, troca de grupo, desativação e reativação, com registro de todas as alterações
 - Status do sistema na aba de configurações: Redis, worker e agendador
 - Retenção do histórico editável, com limpeza automática diária pelo beat
 - Mensagens de confirmação e de erro em todas as ações
+- Segurança: bloqueio de login após senhas erradas, HTTPS em produção e robôs isolados do ambiente do Maestro (veja [Segurança](#segurança))
+- Docker: `docker compose up -d --build` sobe tudo, inclusive o agente
 
 **Planejado**
 
 - Alertas de falha, tempo esgotado e atraso
-- Agente em Go, o programa que roda nas outras máquinas (o lado do Maestro já está pronto: veja [Agentes](#agentes))
+- Agente como serviço do sistema (systemd e serviço do Windows)
 - API REST
 
 ---
@@ -84,7 +237,7 @@ Quando um robô é iniciado, pelo botão ou por um agendamento, o disparo passa 
 
 A cada minuto, o beat do Celery envia a tarefa que verifica os agendamentos vencidos e os dispara pelo mesmo caminho, e a tarefa que grava o pulso usado pelo status do sistema. Uma vez por dia, às 03:17, envia a limpeza do histórico.
 
-Um robô também pode rodar num **agente**, instalado na máquina onde o robô vive. O agente abre uma conexão WebSocket com o Maestro, recebe os comandos de iniciar e parar, executa o robô no ambiente dele e devolve o log e como terminou. Robôs sem agente continuam no worker. O Django continua sendo o ponto central de cadastro, permissões e histórico; o robô continua sendo Python. O lado do Maestro está pronto e testado com um agente de referência em Python; o agente de produção será escrito em Go.
+Um robô também pode rodar num **agente**, instalado na máquina onde o robô vive. O agente abre uma conexão WebSocket com o Maestro, recebe os comandos de iniciar e parar, executa o robô no ambiente dele e devolve o log e como terminou. Robôs sem agente continuam no worker. O Django continua sendo o ponto central de cadastro, permissões e histórico; o robô continua sendo Python. O agente é escrito em Go (`agente-go/`); há também um agente de referência em Python (`tools/agente_referencia.py`), para testar o protocolo.
 
 ---
 
@@ -99,7 +252,9 @@ Um robô também pode rodar num **agente**, instalado na máquina onde o robô v
 | Fila e execução assíncrona | Celery + Redis | Em uso |
 | Agendamento | Celery beat, com uma tarefa própria (sem `django-celery-beat`) | Em uso |
 | Tempo real | Django Channels + `channels-redis`, servido pelo Daphne (WebSocket) | Em uso |
-| Execução remota | Agente pelo WebSocket `ws/agente/` | Lado do Maestro em uso; agente em Go planejado |
+| Execução remota | Agente em Go pelo WebSocket `ws/agente/` | Em uso |
+| Login | `django-axes` (bloqueio após senhas erradas) | Em uso |
+| Contêineres | Docker e Docker Compose | Em uso (desenvolvimento) |
 | API | Django REST Framework + JWT | Planejado |
 
 ---
@@ -109,6 +264,9 @@ Um robô também pode rodar num **agente**, instalado na máquina onde o robô v
 ```
 maestro-zavan/
 ├── accounts/            # autenticação e painel
+├── agente-go/           # agente em Go, que roda os robôs em outra máquina
+│   ├── internal/        # config, conexão, execuções, executor, ambiente, proteção
+│   └── main.go
 ├── agents/              # agentes: cadastro, token, protocolo e WebSocket do agente
 │   ├── comandos.py      # iniciar, parar e desconectar, enviados ao agente
 │   ├── consumers.py     # WebSocket do agente (ws/agente/)
@@ -157,6 +315,8 @@ maestro-zavan/
 │   ├── scheduler/
 │   └── config/
 ├── CHANGELOG.md
+├── Dockerfile           # imagem do Maestro (web e worker)
+├── docker-compose.yml
 ├── manage.py
 └── pyproject.toml
 ```
@@ -641,11 +801,14 @@ Cadastro de robôs, execução em segundo plano, histórico com log, permissões
 - Pronto: tempo limite e novas tentativas por robô, "parar" que encerra o processo de verdade e limites padrão editáveis
 - Pronto: log ao vivo na tela de detalhe, com Django Channels
 - Pronto: lado do Maestro para o agente (cadastro, token, protocolo, disparo e parada), com agente de referência em Python
+- Pronto: agente em Go, com fila de reenvio, encerramento em árvore e o ambiente de cada robô (uv, poetry, pdm, pipenv ou pip)
+- Pronto: Docker Compose com Maestro, worker, agendador e agente
+- Pronto: correções da varredura de segurança
 - Alertas na tela quando um robô falha, estoura o tempo ou atrasa
 
 ### Depois
 
-- Agente em Go (próximo card), seguindo `docs/agente/protocolo.md`
+- Agente como serviço do sistema (systemd e serviço do Windows)
 - Clientes e ambientes (servidor da ZV Labs, instalações do cliente ou os dois)
 - API REST (DRF + JWT, com limite de requisições)
 
