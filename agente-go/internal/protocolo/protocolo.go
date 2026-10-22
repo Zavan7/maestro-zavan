@@ -17,6 +17,12 @@ const (
 	TempoEsgotado  Motivo = "tempo_esgotado"
 	Parado         Motivo = "parado"
 	ScriptInvalido Motivo = "script_invalido"
+	// AmbienteInvalido: a ferramenta de dependências do robô (uv, poetry,
+	// pdm, pipenv) não está instalada; o Maestro não tenta de novo.
+	AmbienteInvalido Motivo = "ambiente_invalido"
+	// PreparoFalhou: instalar as dependências falhou ou passou do tempo;
+	// o Maestro pode tentar de novo.
+	PreparoFalhou Motivo = "preparo_falhou"
 )
 
 // Recebida guarda os campos que o agente lê dos comandos do Maestro.

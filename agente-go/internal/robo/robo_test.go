@@ -70,38 +70,3 @@ func TestResolverRecusaScriptInexistenteOuPasta(t *testing.T) {
 		}
 	}
 }
-
-func TestComandoUsaUvQuandoHaPyproject(t *testing.T) {
-	pasta := t.TempDir()
-	script := filepath.Join(pasta, "main.py")
-	criar(t, script)
-	criar(t, filepath.Join(pasta, "pyproject.toml"))
-
-	programa, args, dir := Comando(script, "uv", "python3")
-	if programa != "uv" || dir != pasta {
-		t.Fatalf("programa=%q dir=%q", programa, dir)
-	}
-	esperado := []string{"run", "python", "-u", "main.py"}
-	if len(args) != len(esperado) {
-		t.Fatalf("args = %v, esperado %v", args, esperado)
-	}
-	for i := range esperado {
-		if args[i] != esperado[i] {
-			t.Fatalf("args = %v, esperado %v", args, esperado)
-		}
-	}
-}
-
-func TestComandoUsaPythonSemPyproject(t *testing.T) {
-	pasta := t.TempDir()
-	script := filepath.Join(pasta, "robo.py")
-	criar(t, script)
-
-	programa, args, dir := Comando(script, "uv", "python3")
-	if programa != "python3" || dir != pasta {
-		t.Fatalf("programa=%q dir=%q", programa, dir)
-	}
-	if len(args) != 2 || args[0] != "-u" || args[1] != script {
-		t.Fatalf("args = %v", args)
-	}
-}

@@ -12,10 +12,13 @@ Como rodar, da raiz do projeto, com o Maestro (Daphne) no ar::
     export AGENTE_PASTA_ROBOS=/caminho/dos/robos
     uv run python -m tools.agente_referencia
 
-Limitações conhecidas, que o agente em Go precisa resolver: se a
-conexão cair no meio de uma execução, as mensagens daquele intervalo se
-perdem (não há fila para reenviar), e o robô roda com o Python deste
-ambiente, e não com o ``uv run`` da pasta do robô.
+Cada robô roda no ambiente do próprio gerenciador de dependências (uv,
+poetry, pdm, pipenv ou pip), detectado pela pasta dele, com a mesma
+regra do worker e do agente em Go (``robots.ambiente``).
+
+Limitação conhecida: se a conexão cair no meio de uma execução, as
+mensagens daquele intervalo se perdem (não há fila para reenviar; o
+agente em Go tem).
 
 English:
     Python reference agent, to test the agent protocol.
@@ -33,10 +36,13 @@ English:
         export AGENTE_PASTA_ROBOS=/path/to/robots
         uv run python -m tools.agente_referencia
 
-    Known limitations, which the Go agent must solve: if the connection
-    drops mid-execution, the messages of that interval are lost (there is
-    no queue to resend them), and the robot runs with this environment's
-    Python, not with ``uv run`` in the robot's folder.
+    Each robot runs in its own dependency manager's environment (uv,
+    poetry, pdm, pipenv or pip), detected from its folder, with the same
+    rule as the worker and the Go agent (``robots.ambiente``).
+
+    Known limitation: if the connection drops mid-execution, the messages
+    of that interval are lost (there is no queue to resend them; the Go
+    agent has one).
 """
 
 import json
@@ -51,7 +57,8 @@ from typing import Any
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 from websockets.sync.client import ClientConnection, connect
 
-from robots.executor import Motivo, executar
+from robots.ambiente import Programas, rodar_robo
+from robots.executor import Motivo
 
 INTERVALO_HEARTBEAT_SEGUNDOS = 30
 INTERVALO_LOTE_SEGUNDOS = 0.5
@@ -67,13 +74,21 @@ class Agente:
         A connection to Maestro and the executions it is running.
     """
 
-    def __init__(self, url: str, token: str, pasta_robos: Path) -> None:
+    def __init__(
+        self,
+        url: str,
+        token: str,
+        pasta_robos: Path,
+        pasta_venvs: Path | None = None,
+    ) -> None:
         """Guarda a configuração do agente.
 
         Args:
             url: endereço do WebSocket, como ``ws://host/ws/agente/``.
             token: token gerado na aba de configurações.
             pasta_robos: pasta aprovada; só scripts dentro dela rodam.
+            pasta_venvs: onde guardar o ambiente de cada robô, se não na
+                pasta dele.
 
         English:
             Stores the agent configuration.
@@ -82,10 +97,13 @@ class Agente:
                 url: WebSocket address, such as ``ws://host/ws/agente/``.
                 token: token generated in the settings tab.
                 pasta_robos: approved folder; only scripts inside it run.
+                pasta_venvs: where to keep each robot's environment, if
+                    not in its folder.
         """
         self.url = url
         self.token = token
         self.pasta_robos = pasta_robos.resolve()
+        self.pasta_venvs = pasta_venvs
         self.paradas: set[int] = set()
 
     def rodar_para_sempre(self) -> None:
@@ -225,18 +243,19 @@ class Agente:
             _enviar_fim(conexao, execucao_id, Motivo.SCRIPT_INVALIDO, None)
             return
 
-        resultado = executar(
-            [sys.executable, "-u", str(script)],
-            cwd=script.parent,
+        motivo, codigo_saida = rodar_robo(
+            script,
+            programas=Programas(),
+            pasta_robos=self.pasta_robos,
+            pasta_venvs=self.pasta_venvs,
             timeout_segundos=comando["timeout_segundos"],
             deve_parar=lambda: execucao_id in self.paradas,
             ao_receber_linha=lote.append,
             a_cada_volta=enviar_lote,
+            venv_atual=sys.prefix if sys.prefix != sys.base_prefix else None,
         )
         enviar_lote(forcar=True)
-        _enviar_fim(
-            conexao, execucao_id, resultado.motivo, resultado.codigo_saida
-        )
+        _enviar_fim(conexao, execucao_id, motivo, codigo_saida)
         self.paradas.discard(execucao_id)
 
 
@@ -347,4 +366,9 @@ if __name__ == "__main__":
         url=os.environ["MAESTRO_URL"],
         token=os.environ["MAESTRO_TOKEN"],
         pasta_robos=Path(os.environ["AGENTE_PASTA_ROBOS"]),
+        pasta_venvs=(
+            Path(os.environ["AGENTE_PASTA_VENVS"])
+            if os.getenv("AGENTE_PASTA_VENVS")
+            else None
+        ),
     ).rodar_para_sempre()

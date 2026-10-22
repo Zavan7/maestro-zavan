@@ -20,7 +20,7 @@ x-maestro: &maestro
   # Mesmo usuário do host: db.sqlite3 e os arquivos criados continuam
   # seus, e não do root.
   user: "${UID:-1000}:${GID:-1000}"
-  environment:
+  environment: &ambiente-maestro
     CELERY_BROKER_URL: redis://redis:6379/0
     CHANNELS_REDIS_URL: redis://redis:6379/1
     HOME: /tmp
@@ -54,6 +54,17 @@ services:
   worker:
     <<: *maestro
     command: celery -A maestro worker -B --loglevel=info
+    # O worker roda os robôs sem agente, cada um no ambiente do próprio
+    # gerenciador (uv, poetry, pdm, pipenv ou pip). Os ambientes, os
+    # caches e o HOME dos robôs ficam num volume: sobrevivem a recriar o
+    # container e não criam .venv dentro da pasta montada do host.
+    environment:
+      <<: *ambiente-maestro
+      HOME: /var/lib/maestro-robos
+      ROBOS_PASTA_VENVS: /var/lib/maestro-robos/venvs
+    volumes:
+      - .:/app
+      - worker-robos:/var/lib/maestro-robos
 
   agente:
     build: ./agente-go
@@ -78,3 +89,4 @@ services:
 volumes:
   redis-dados:
   agente-dados:
+  worker-robos:

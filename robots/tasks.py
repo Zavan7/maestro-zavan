@@ -34,8 +34,9 @@ from django.utils import timezone
 from config.models import ConfiguracaoSistema
 from executions.ao_vivo import LinhaDoLog, publicar_linhas
 from executions.models import Execucao
+from robots.ambiente import Programas, rodar_robo
 from robots.conclusao import desfecho, finalizar_execucao
-from robots.executor import Motivo, executar
+from robots.executor import Motivo
 
 INTERVALO_DESPACHO_SEGUNDOS = 0.5
 
@@ -306,10 +307,12 @@ def executar_robo(execucao_id: int) -> None:
        atualizado, a execução já não está pendente (foi cancelada pelo
        botão "parar" antes de o worker chegar nela, ou a tarefa chegou
        duas vezes) e a tarefa termina sem rodar o script.
-    2. Roda o script pelo executor, com o Python do Maestro
-       (``sys.executable``) em modo sem buffer (``-u``), para cada linha
-       chegar assim que o robô a escreve. O tempo limite é o do robô ou,
-       se ele não define, o padrão da aba de configurações.
+    2. Roda o script no ambiente dele (``robots.ambiente``): detecta o
+       gerenciador de dependências da pasta do robô (uv, poetry, pdm,
+       pipenv, pip ou nenhum), prepara as dependências e roda em modo
+       sem buffer (``-u``), para cada linha chegar assim que o robô a
+       escreve. O tempo limite é o do robô ou, se ele não define, o
+       padrão da aba de configurações.
     3. A cada segundo o executor pergunta se ``parada_solicitada`` foi
        marcada pelo botão "parar". Enquanto isso, as linhas vão para o
        banco e para a tela ao vivo em lotes (``LogAoVivo``).
@@ -335,10 +338,12 @@ def executar_robo(execucao_id: int) -> None:
            was cancelled with the "stop" button before the worker got to
            it, or the task arrived twice) and the task ends without
            running the script.
-        2. Runs the script through the executor, with Maestro's Python
-           (``sys.executable``) in unbuffered mode (``-u``), so each line
-           arrives as soon as the robot writes it. The timeout is the
-           robot's own or, if it sets none, the settings tab default.
+        2. Runs the script in its environment (``robots.ambiente``): it
+           detects the dependency manager of the robot's folder (uv,
+           poetry, pdm, pipenv, pip or none), prepares the dependencies
+           and runs in unbuffered mode (``-u``), so each line arrives as
+           soon as the robot writes it. The timeout is the robot's own
+           or, if it sets none, the settings tab default.
         3. Every second the executor asks whether ``parada_solicitada``
            was set by the "stop" button. Meanwhile, the lines go to the
            database and to the page live in batches (``LogAoVivo``).
@@ -369,18 +374,21 @@ def executar_robo(execucao_id: int) -> None:
 
     try:
         script = _resolver_script(execucao.robo.caminho_script)
-        resultado = executar(
-            [sys.executable, "-u", str(script)],
-            cwd=script.parent,
+    except (ValueError, FileNotFoundError) as erro:
+        log.adicionar(str(erro))
+        motivo, codigo_saida = Motivo.SCRIPT_INVALIDO, None
+    else:
+        motivo, codigo_saida = rodar_robo(
+            script,
+            programas=Programas(),
+            pasta_robos=Path(settings.ROBOS_SCRIPTS_DIR),
+            pasta_venvs=settings.ROBOS_PASTA_VENVS,
             timeout_segundos=timeout,
             deve_parar=lambda: _parada_solicitada(execucao_id),
             ao_receber_linha=log.adicionar,
             a_cada_volta=log.despachar,
+            venv_atual=sys.prefix if sys.prefix != sys.base_prefix else None,
         )
-        motivo, codigo_saida = resultado.motivo, resultado.codigo_saida
-    except (ValueError, FileNotFoundError) as erro:
-        log.adicionar(str(erro))
-        motivo, codigo_saida = Motivo.SCRIPT_INVALIDO, None
 
     fim = desfecho(motivo, codigo_saida, timeout)
     if fim.aviso:

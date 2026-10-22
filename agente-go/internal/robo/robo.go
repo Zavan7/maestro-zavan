@@ -53,18 +53,6 @@ func Resolver(pasta, robo string) (string, error) {
 	return real, nil
 }
 
-// Comando monta o programa, os argumentos e a pasta de trabalho para
-// rodar o script. Se a pasta do script tem pyproject.toml, o robô roda
-// com "uv run", nas dependências dele; senão, com o Python informado.
-// Sempre com -u, para cada linha do log sair assim que é escrita.
-func Comando(script, uv, python string) (programa string, args []string, pasta string) {
-	pasta = filepath.Dir(script)
-	if _, err := os.Stat(filepath.Join(pasta, "pyproject.toml")); err == nil {
-		return uv, []string{"run", "python", "-u", filepath.Base(script)}, pasta
-	}
-	return python, []string{"-u", script}, pasta
-}
-
 // dentro diz se caminho é a própria pasta ou está abaixo dela.
 func dentro(pasta, caminho string) bool {
 	rel, err := filepath.Rel(pasta, caminho)
